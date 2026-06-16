@@ -1,0 +1,47 @@
+# HardwareScraper configuration
+# All fee rates, thresholds, and search parameters live here — not in code.
+
+ebay:
+  app_id: ""         # eBay Developer Program App ID (Client ID)
+  cert_id: ""        # eBay Cert ID (Client Secret)
+  environment: "production"   # "production" or "sandbox"
+  comps_days_back: 60         # how far back to look for sold listings
+  comps_cache_hours: 24       # cache TTL for eBay comps per (canonical_name, condition)
+  max_comps_per_query: 50     # max sold listings to fetch per eBay search
+
+fees:
+  ebay_rate: 0.1325           # 13.25% final value fee
+  ebay_fixed: 0.30            # $0.30 per order
+  outbound_shipping: 15.00    # estimated outbound shipping cost (USD)
+
+margin_tiers:
+  excellent: 50               # >= 50% → Tier 1: Excellent
+  good: 30                    # >= 30% → Tier 2: Good
+  marginal: 15                # >= 15% → Tier 3: Marginal
+  low: 0                      # >= 0%  → Tier 4: Low
+                              # <  0%  → Tier 5: Overpriced
+
+scraping:
+  location_zip: ""            # your zip code for local marketplace searches
+  radius_miles: 25            # search radius
+  rate_limit_seconds: 3.0     # delay between requests (be respectful)
+  headless: true              # run browser headlessly
+  session_dir: "data/browser_session"   # persistent Playwright session path
+
+search:
+  queries:                    # default search terms; override via CLI --query
+    - "RTX 3070"
+    - "RTX 3080"
+    - "RTX 3090"
+    - "RX 6800"
+    - "i7-12700"
+    - "i9-12900"
+    - "Ryzen 7 5800X"
+    - "Ryzen 9 5900X"
+
+database:
+  url: "sqlite:///data/hardware_scraper.db"
+
+output:
+  csv_dir: "data/exports"
+  min_margin_to_show: 0       # only show listings >= this margin % in report

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+.env
+
+# Database
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Browser session (contains auth cookies — never commit)
+data/browser_session/
+
+# Exports
+data/exports/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

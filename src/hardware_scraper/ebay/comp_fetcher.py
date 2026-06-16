@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import statistics
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional, Tuple
+
+from sqlalchemy.orm import Session
+
+from hardware_scraper.config import get_config
+from hardware_scraper.models import EbayComp
+from .client import EbayClient
+
+
+class CompFetcher:
+    """Fetches eBay sold comps for a product and caches them in the DB."""
+
+    def __init__(self, client: EbayClient, db: Session) -> None:
+        self._client = client
+        self._db = db
+        self._cfg = get_config()
+
+    def get_cached_comps(self, product_id: int, condition: str) -> Optional[List[EbayComp]]:
+        cache_cutoff = datetime.now(timezone.utc) - timedelta(
+            hours=self._cfg.ebay.comps_cache_hours
+        )
+        comps = (
+            self._db.query(EbayComp)
+            .filter(
+                EbayComp.product_id == product_id,
+                EbayComp.condition == condition,
+                EbayComp.fetched_at >= cache_cutoff,
+            )
+            .all()
+        )
+        return comps if comps else None
+
+    async def fetch_and_cache(
+        self, product_id: int, canonical_name: str, condition: str
+    ) -> List[EbayComp]:
+        items = await self._client.get_sold_listings(
+            query=canonical_name,
+            days_back=self._cfg.ebay.comps_days_back,
+            limit=self._cfg.ebay.max_comps_per_query,
+            condition=condition,
+        )
+
+        comps = []
+        for item in items:
+            try:
+                price = float(item["price"]["value"])
+                shipping_cost = 0.0
+                if item.get("shippingOptions"):
+                    sc = item["shippingOptions"][0].get("shippingCost", {})
+                    shipping_cost = float(sc.get("value", 0))
+                sold_date = datetime.fromisoformat(
+                    item.get("itemEndDate", datetime.now(timezone.utc).isoformat()).replace("Z", "+00:00")
+                )
+                comp = EbayComp(
+                    product_id=product_id,
+                    condition=condition,
+                    sold_price=price,
+                    shipping=shipping_cost,
+                    ebay_item_id=item.get("itemId", ""),
+                    sold_date=sold_date,
+                )
+                self._db.add(comp)
+                comps.append(comp)
+            except (KeyError, ValueError, TypeError):
+                continue
+
+        self._db.commit()
+        return comps
+
+    def median_sold_price(self, comps: List[EbayComp]) -> Tuple[float, int]:
+        """Returns (median_price, comp_count) after IQR outlier removal."""
+        if not comps:
+            return 0.0, 0
+
+        prices = sorted(c.sold_price for c in comps)
+        if len(prices) >= 4:
+            q1 = statistics.quantiles(prices, n=4)[0]
+            q3 = statistics.quantiles(prices, n=4)[2]
+            iqr = q3 - q1
+            prices = [p for p in prices if q1 - 1.5 * iqr <= p <= q3 + 1.5 * iqr]
+
+        if not prices:
+            return 0.0, 0
+
+        return statistics.median(prices), len(prices)
