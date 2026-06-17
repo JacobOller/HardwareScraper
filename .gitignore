@@ -15,11 +15,16 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
-# Browser session (contains auth cookies — never commit)
+# Browser sessions (contain auth cookies — never commit)
 data/browser_session/
+data/facebook_session/
+data/ebay_session/
 
 # Exports
 data/exports/
+
+# Secrets
+keys.txt
 
 # Pytest
 .pytest_cache/
