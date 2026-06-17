@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 import yaml
 from pydantic import field_validator
@@ -33,6 +33,21 @@ class FeesConfig(BaseSettings):
     ebay_rate: float = 0.1325
     ebay_fixed: float = 0.30
     outbound_shipping: float = 15.00
+
+
+class ShippingConfig:
+    """Per-category outbound shipping estimates."""
+
+    def __init__(self, default: float = 15.00, by_category: Optional[Dict] = None) -> None:
+        self.default = default
+        self.by_category: Dict[str, float] = {
+            k: float(v) for k, v in (by_category or {}).items()
+        }
+
+    def for_category(self, category: Optional[str]) -> float:
+        if category and category in self.by_category:
+            return self.by_category[category]
+        return self.default
 
 
 class MarginTiers(BaseSettings):
@@ -68,6 +83,20 @@ class OutputConfig(BaseSettings):
     min_margin_to_show: int = 0
 
 
+class LLMConfig(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "claude-haiku-4-5"
+    confidence_threshold: float = 0.5
+
+
+class FacebookConfig:
+    def __init__(self, session_dir: str = "data/facebook_session", enabled: bool = True) -> None:
+        self.session_dir = session_dir
+        self.enabled = enabled
+
+
 class AppConfig:
     def __init__(self) -> None:
         raw = _load_yaml()
@@ -78,6 +107,19 @@ class AppConfig:
         self.search = SearchConfig(**raw.get("search", {}))
         self.database = DatabaseConfig(**raw.get("database", {}))
         self.output = OutputConfig(**raw.get("output", {}))
+        self.llm = LLMConfig(**raw.get("llm", {}))
+
+        ship_raw = raw.get("shipping", {})
+        self.shipping = ShippingConfig(
+            default=float(ship_raw.get("default", self.fees.outbound_shipping)),
+            by_category=ship_raw.get("by_category", {}),
+        )
+
+        fb_raw = raw.get("facebook", {})
+        self.facebook = FacebookConfig(
+            session_dir=fb_raw.get("session_dir", "data/facebook_session"),
+            enabled=bool(fb_raw.get("enabled", True)),
+        )
 
 
 _instance: AppConfig | None = None

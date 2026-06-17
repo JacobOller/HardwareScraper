@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from hardware_scraper.config import get_config, MarginTiers
 
@@ -29,15 +30,24 @@ class ValuationCalculator:
         net_resale  = median_ebay_sold - (median_ebay_sold * ebay_rate + ebay_fixed) - outbound_shipping
         profit      = net_resale - asking_price
         margin_pct  = (profit / asking_price) * 100
+
+    Outbound shipping is looked up per product category from config.shipping.by_category.
     """
 
     def __init__(self) -> None:
         self._cfg = get_config()
 
-    def calculate(self, asking_price: float, ebay_median: float, comp_count: int) -> ValuationResult:
+    def calculate(
+        self,
+        asking_price: float,
+        ebay_median: float,
+        comp_count: int,
+        category: Optional[str] = None,
+    ) -> ValuationResult:
         fees = self._cfg.fees
+        shipping = self._cfg.shipping.for_category(category)
         estimated_fees = ebay_median * fees.ebay_rate + fees.ebay_fixed
-        net_resale = ebay_median - estimated_fees - fees.outbound_shipping
+        net_resale = ebay_median - estimated_fees - shipping
         profit = net_resale - asking_price
         margin_pct = (profit / asking_price * 100) if asking_price > 0 else 0.0
         tier, label = self._classify(margin_pct)
@@ -45,7 +55,7 @@ class ValuationCalculator:
             ebay_median_price=round(ebay_median, 2),
             ebay_comp_count=comp_count,
             estimated_fees=round(estimated_fees, 2),
-            estimated_shipping=round(fees.outbound_shipping, 2),
+            estimated_shipping=round(shipping, 2),
             net_resale=round(net_resale, 2),
             profit=round(profit, 2),
             margin_pct=round(margin_pct, 1),

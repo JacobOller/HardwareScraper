@@ -10,6 +10,7 @@ def mock_config():
     cfg.fees.ebay_rate = 0.1325
     cfg.fees.ebay_fixed = 0.30
     cfg.fees.outbound_shipping = 15.00
+    cfg.shipping.for_category.return_value = 15.00
     cfg.margin_tiers.excellent = 50
     cfg.margin_tiers.good = 30
     cfg.margin_tiers.marginal = 15

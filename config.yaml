@@ -12,7 +12,22 @@ ebay:
 fees:
   ebay_rate: 0.1325           # 13.25% final value fee
   ebay_fixed: 0.30            # $0.30 per order
-  outbound_shipping: 15.00    # estimated outbound shipping cost (USD)
+  outbound_shipping: 15.00    # fallback shipping (superseded by shipping.by_category)
+
+shipping:
+  default: 15.00              # fallback if category not in by_category
+  by_category:
+    cpu: 8.00
+    ram: 6.00
+    ssd: 7.00
+    hdd: 10.00
+    gpu: 15.00
+    motherboard: 12.00
+    psu: 12.00
+    cooling: 10.00
+    case: 30.00
+    laptop: 15.00
+    desktop: 40.00
 
 margin_tiers:
   excellent: 50               # >= 50% → Tier 1: Excellent
@@ -22,11 +37,15 @@ margin_tiers:
                               # <  0%  → Tier 5: Overpriced
 
 scraping:
-  location_zip: ""            # your zip code for local marketplace searches
-  radius_miles: 25            # search radius
+  location_zip: "02766"       # your zip code for local marketplace searches
+  radius_miles: 40            # search radius (covers Lowell MA to past Providence RI)
   rate_limit_seconds: 3.0     # delay between requests (be respectful)
-  headless: true              # run browser headlessly
+  headless: true             # set to true after first login to OfferUp
   session_dir: "data/browser_session"   # persistent Playwright session path
+
+facebook:
+  session_dir: "data/facebook_session"  # persistent Playwright session for FB login
+  enabled: true
 
 search:
   queries:                    # default search terms; override via CLI --query
@@ -44,4 +63,10 @@ database:
 
 output:
   csv_dir: "data/exports"
-  min_margin_to_show: 0       # only show listings >= this margin % in report
+  min_margin_to_show: -9999   # show all listings; raise to filter (e.g. 15 = only Marginal+)
+
+llm:
+  enabled: true              # set true to enable Claude Haiku fallback for low-confidence titles
+  api_key: "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"                 # leave blank to use ANTHROPIC_API_KEY env var
+  model: "claude-haiku-4-5"
+  confidence_threshold: 0.5   # listings below this score are sent to the LLM

@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional
 from .category_rules import (
     GPU_BRAND_PATTERNS, GPU_MODEL_PATTERNS,
     CPU_BRAND_PATTERNS, CPU_MODEL_PATTERNS,
+    LAPTOP_BRAND_PATTERNS, LAPTOP_MODEL_PATTERNS,
+    GPU_IN_SYSTEM_RE, CPU_IN_SYSTEM_RE,
     VRAM_PATTERN, RAM_CAPACITY_PATTERN,
     detect_category, detect_condition,
 )
@@ -57,6 +59,27 @@ class TitleParser:
                 cap_m = RAM_CAPACITY_PATTERN.search(text)
                 if cap_m:
                     specs["capacity_gb"] = int(cap_m.group(1))
+            elif category == "laptop":
+                brand = self._match_brand(text, LAPTOP_BRAND_PATTERNS)
+                model = self._match_model(text, LAPTOP_MODEL_PATTERNS)
+                ram_m = RAM_CAPACITY_PATTERN.search(text)
+                if ram_m:
+                    specs["ram_gb"] = int(ram_m.group(1))
+            elif category == "desktop":
+                # For complete systems, extract the key component for the eBay search.
+                # GPU is the primary differentiator for gaming PCs; fall back to CPU.
+                gpu_m = GPU_IN_SYSTEM_RE.search(text)
+                cpu_m = CPU_IN_SYSTEM_RE.search(text)
+                if gpu_m:
+                    model = self._clean(gpu_m.group(1))
+                    # Brand is the system brand (Dell, HP, etc.) or None for custom builds.
+                    brand = self._detect_oem_brand(text)
+                elif cpu_m:
+                    model = self._clean(cpu_m.group(1))
+                    brand = self._detect_oem_brand(text)
+                ram_m = RAM_CAPACITY_PATTERN.search(text)
+                if ram_m:
+                    specs["ram_gb"] = int(ram_m.group(1))
 
         if brand:
             confidence += 0.2
@@ -65,7 +88,7 @@ class TitleParser:
         if condition != "used":
             confidence += 0.1
 
-        canonical = self._build_canonical(category, brand, model, specs)
+        canonical = self._build_canonical(category, brand, model, specs, text)
 
         return ParsedTitle(
             category=category,
@@ -91,6 +114,25 @@ class TitleParser:
                 return m.group(1)
         return None
 
+    def _detect_oem_brand(self, text: str) -> Optional[str]:
+        """Detect OEM brands (Dell, HP, etc.) in a desktop/system listing."""
+        oem_patterns = [
+            (r"\bdell\b", "Dell"),
+            (r"\bhp\b|\bhewlett\b", "HP"),
+            (r"\blenovo\b", "Lenovo"),
+            (r"\basus\b", "ASUS"),
+            (r"\bacer\b", "Acer"),
+            (r"\bmsi\b", "MSI"),
+            (r"\bcyberpowerpc\b|\bcyberpower\b", "CyberPowerPC"),
+            (r"\bibrpowerpc\b|\bibuypower\b", "iBUYPOWER"),
+            (r"\bnzxt\b", "NZXT"),
+        ]
+        lower = text.lower()
+        for pattern, brand in oem_patterns:
+            if re.search(pattern, lower):
+                return brand
+        return None
+
     def _clean(self, s: str) -> str:
         return re.sub(r"\s+", " ", s).strip()
 
@@ -100,8 +142,39 @@ class TitleParser:
         brand: Optional[str],
         model: Optional[str],
         specs: Dict,
+        text: str = "",
     ) -> Optional[str]:
-        if not (category and model):
+        if not category:
+            return None
+
+        if category == "desktop":
+            if not model:
+                return None
+            # Build an eBay-friendly system-level search query.
+            # "Gaming PC RTX 3080" or "Dell Desktop i7-12700K"
+            gpu_m = GPU_IN_SYSTEM_RE.search(text)
+            if gpu_m:
+                gpu = self._clean(gpu_m.group(1)).upper().replace("  ", " ")
+                return f"Gaming PC {gpu}"
+            cpu_m = CPU_IN_SYSTEM_RE.search(text)
+            if cpu_m:
+                cpu = self._clean(cpu_m.group(1))
+                prefix = f"{brand} Desktop" if brand else "Desktop PC"
+                return f"{prefix} {cpu}"
+            return None
+
+        if category == "laptop":
+            if not model:
+                # No specific model — too vague for reliable comps
+                return None
+            parts = []
+            if brand:
+                parts.append(brand)
+            parts.append(self._clean(model))
+            return " ".join(parts)
+
+        # Components (gpu, cpu, ram, etc.)
+        if not model:
             return None
         parts = []
         if brand:

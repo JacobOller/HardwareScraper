@@ -60,7 +60,7 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
                     skipped += 1
                     continue
 
-                result = calculator.calculate(listing.price, median, count)
+                result = calculator.calculate(listing.price, median, count, category=product.category)
 
                 val = Valuation(
                     listing_id=listing.id,

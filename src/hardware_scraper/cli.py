@@ -13,10 +13,10 @@ console = Console()
 @app.command()
 def scrape(
     query: Optional[str] = typer.Option(None, "--query", "-q", help="Override search query"),
-    source: str = typer.Option("offerup", "--source", "-s", help="Marketplace source (offerup)"),
+    source: str = typer.Option("offerup", "--source", "-s", help="Marketplace source: offerup | facebook"),
     limit: int = typer.Option(50, "--limit", "-n", help="Max listings to scrape"),
 ) -> None:
-    """Scrape listings from a local marketplace."""
+    """Scrape listings from a local marketplace by keyword search."""
     from hardware_scraper.pipeline.ingest import run_ingest
     asyncio.run(run_ingest(query=query, source=source, limit=limit))
 
@@ -38,6 +38,35 @@ def report(
     """Display top opportunities ranked by profit margin."""
     from hardware_scraper.output.reporter import run_report
     run_report(min_margin=min_margin, export_csv=export_csv)
+
+
+@app.command()
+def browse(
+    limit: int = typer.Option(100, "--limit", "-n", help="Max listings to fetch"),
+    source: str = typer.Option("offerup", "--source", "-s", help="Marketplace source: offerup | facebook"),
+) -> None:
+    """Fetch all local listings without a keyword (empty-query browse)."""
+    from hardware_scraper.pipeline.ingest import run_browse
+    asyncio.run(run_browse(limit=limit, source=source))
+
+
+@app.command(name="fb-browse")
+def fb_browse(
+    limit: int = typer.Option(100, "--limit", "-n", help="Max listings to fetch"),
+) -> None:
+    """Browse all local Facebook Marketplace listings (shorthand for browse --source facebook)."""
+    from hardware_scraper.pipeline.ingest import run_browse
+    asyncio.run(run_browse(limit=limit, source="facebook"))
+
+
+@app.command(name="fb-scrape")
+def fb_scrape(
+    query: Optional[str] = typer.Option(None, "--query", "-q", help="Search query"),
+    limit: int = typer.Option(50, "--limit", "-n", help="Max listings to fetch"),
+) -> None:
+    """Search Facebook Marketplace by keyword (shorthand for scrape --source facebook)."""
+    from hardware_scraper.pipeline.ingest import run_ingest
+    asyncio.run(run_ingest(query=query, source="facebook", limit=limit))
 
 
 @app.command()
