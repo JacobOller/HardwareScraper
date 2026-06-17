@@ -6,7 +6,7 @@ Finds underpriced PC hardware on local marketplace platforms (OfferUp, Facebook 
 
 ## Current Phase
 
-Phase 2A complete. Phase 2B (automation/Discord) next. See `plan.md` for full roadmap.
+Phases 2A–2G complete. Phase 2B (automation/Discord) next. See `plan.md` for full roadmap.
 
 ## Tech Stack
 
@@ -60,7 +60,8 @@ HardwareScraper/
 │   │   └── calculator.py         # ValuationCalculator → margin formula + per-category shipping
 │   ├── pipeline/
 │   │   ├── ingest.py             # run_ingest() + run_browse(): scrape → filter → parse → store
-│   │   └── valuate.py            # run_valuate(): fetch comps → calculate margins
+│   │   ├── valuate.py            # run_valuate(): fetch comps → calculate margins
+│   │   └── validate.py           # run_llm_validate(): LLM-check high-margin listings for misrepresentations
 │   └── output/
 │       └── reporter.py           # Rich table + CSV export
 ├── data/                         # gitignored: *.db, browser_session/, facebook_session/, ebay_session/, exports/
@@ -148,11 +149,13 @@ Outbound shipping is per-category from `config.yaml` `shipping.by_category` (e.g
 - Sold date: `div.s-card__caption`
 - Item ID: `data-listingid` attribute
 - `CompFetcher` auto-routes: uses `EbayClient` if `app_id`/`cert_id` set, else falls back to `EbayScraper`
+- **Session reuse**: `run_valuate()` opens one shared `EbayScraper.session()` context for the entire valuation run. All `fetch_and_cache` calls reuse it — one browser launch total instead of one per product. Cuts valuate time from ~20 min → ~3-5 min for 300 listings.
 
 ## Product Identification Pipeline
 
 1. Refurb noise filter — `is_refurb_noise(title)` drops `SHOP\d+` / `INV.\d+` patterns before DB write
-2. **$0 price filter** — listings with `price is None or price <= 0` dropped before DB write
+2. **Accessory noise filter** — `is_accessory_noise(title)` drops phone cases, console games/controllers, docks, cleaning services, storage enclosures (47+ regex patterns) before DB write
+3. **$0 price filter** — listings with `price is None or price <= 0` dropped before DB write
 3. Category detection — **priority order: console > phone > desktop > laptop > components**; prevents "Gaming PC with RTX 2060" → gpu misidentification, "PS5 gaming console" → desktop
 4. Brand/model extraction:
    - GPU: `RTX \d{4}`, `GTX \d{4}`, `RX \d{4}` patterns
@@ -169,13 +172,24 @@ Outbound shipping is per-category from `config.yaml` `shipping.by_category` (e.g
 
 Canonical name examples: `"NVIDIA RTX 3080 10GB"`, `"AMD Ryzen 7 5800X"`, `"Lenovo ThinkPad T460"`, `"Gaming PC RTX 2060"`, `"Sony PS5 Digital Edition"`, `"Apple iPhone 15 Pro Max 256GB"`, `"Apple MacBook Pro 14 M3 Pro 2023"`
 
-## LLM Fallback
+## LLM Fallback (title parsing)
 
 - Model: `claude-haiku-4-5` (cheapest, fast, ~$0.001/listing)
 - Gated by `llm.enabled: true` in config.yaml
 - API key: `llm.api_key` in config.yaml or `ANTHROPIC_API_KEY` env var
 - Returns same `ParsedTitle` dataclass as regex parser
 - Only called when regex confidence < `llm.confidence_threshold` (default 0.5)
+
+## LLM Validation (misrepresentation filter)
+
+- `pipeline/validate.py` — `run_llm_validate(margin_threshold=300.0)`
+- Runs automatically at end of `scan` and `scan all` (CLI + web UI)
+- Also available as standalone `hardware-scraper validate` command and **Validate LLM** button in web UI
+- Queries all valuations with `margin_pct > margin_threshold` (default 300%)
+- Sends title + description to Claude Haiku: "Is this a real [category] or an accessory/service?"
+- `DROP` response → valuation deleted, `listing.status = "noise"` (excluded from future valuations)
+- `KEEP` response → no change
+- Only runs when `llm.enabled: true` and API key is set
 
 ## CLI Commands
 
@@ -184,7 +198,7 @@ Canonical name examples: `"NVIDIA RTX 3080 10GB"`, `"AMD Ryzen 7 5800X"`, `"Leno
 .venv\Scripts\Activate.ps1
 
 # Full pipeline (recommended day-to-day)
-hardware-scraper scan                              # browse + scrape all queries + valuate + report
+hardware-scraper scan                              # browse + scrape all queries + valuate + validate + report
 hardware-scraper ui                                # launch web dashboard at http://localhost:8000
 
 # OfferUp
@@ -199,6 +213,8 @@ hardware-scraper fb-browse                         # fetch all local FB listings
 # Valuation & reporting
 hardware-scraper valuate                           # fetch eBay comps, calculate margins
 hardware-scraper valuate --min-confidence 0.5      # include LLM-identified listings
+hardware-scraper validate                          # LLM-check >300% margin listings; drop misrepresentations
+hardware-scraper validate --margin 200             # use lower threshold
 hardware-scraper report                            # show ranked results (Rich table)
 hardware-scraper report --csv                      # also save to data/exports/
 hardware-scraper db-upgrade                        # apply Alembic migrations
@@ -209,9 +225,10 @@ hardware-scraper db-upgrade                        # apply Alembic migrations
 Launch with `hardware-scraper ui` → opens `http://localhost:8000`.
 
 - Dark-themed dashboard showing all valuated listings
-- **Scan All** button — runs the full pipeline (browse + all queries + valuate)
+- **Scan All** button — runs the full pipeline (browse + all queries + valuate + LLM validate)
 - **Browse** / **Scrape** buttons — per-source controls with source selector + keyword input
 - **Valuate** button — re-runs margin calculation on new identified listings
+- **Validate LLM** button — LLM-checks listings with margin >300% and drops misrepresentations
 - Sortable columns: click any column header to sort ascending/descending
 - Filters: text search, category, source (OfferUp/Facebook), condition, margin tier
 - Stat cards: total listings, profitable count, excellent count, for-parts count, avg margin
@@ -231,6 +248,11 @@ facebook:
   session_dir: "data/facebook_session"
   headless: false              # false for first FB login, true after
   enabled: true
+  latitude: 41.9762            # North Attleborough MA
+  longitude: -71.3326
+  radius_miles: 40
+  city_marketplace_url: ""     # paste your FB city URL here if lat/lon results are wrong city
+                               # e.g. "https://www.facebook.com/marketplace/north-attleborough-ma/"
 
 shipping:
   default: 15.00
@@ -279,6 +301,10 @@ output:
 - **For-parts eBay search (fixed 2026-06-16)** — `condition=for_parts` now appends "for parts" keyword + uses `LH_ItemCondition=7000` filter.
 - **Console/phone categories (added 2026-06-16)** — PS5, Xbox Series X/S, Switch, Steam Deck, iPhone, Galaxy, Pixel now identified and valuated.
 - **Parallel scraping safety (fixed 2026-06-16)** — `make_engine()` in `db.py` enables WAL mode + 5s busy timeout; `hardware-scraper scan` runs sources sequentially.
+- **Accessory noise filter expanded (2026-06-17)** — 47 regex patterns in `is_accessory_noise()` now catch: console games with model numbers between brand and "game" (e.g. "Xbox Series X game"), Steam Deck/Switch docks, console cases, cleaning services, SSD enclosures. 112 tests all pass.
+- **Facebook location via city URL (added 2026-06-17)** — `facebook.city_marketplace_url` config option overrides the lat/lon URL params for browse. Visit facebook.com/marketplace, navigate to your city, and paste the URL into config.yaml. Lat/lon params now also include `radiusUnit=mi`.
+- **LLM validation pass (added 2026-06-17)** — `run_llm_validate()` in `pipeline/validate.py` uses Claude Haiku to check listings with margin >300% and deletes valuations that are accessories/services. Runs automatically at end of scan; also available as `hardware-scraper validate` and **Validate LLM** button in web UI.
+- **eBay session reuse (added 2026-06-17)** — `EbayScraper.session()` async context manager holds one Playwright browser open for an entire `run_valuate()` call. Previously each product launched and closed a browser (~4-5s overhead each). Now it's a one-time cost. `CompFetcher(scraper=...)` accepts the shared instance.
 
 ## For-Parts Strategy
 

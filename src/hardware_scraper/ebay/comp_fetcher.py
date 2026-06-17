@@ -14,10 +14,11 @@ from .client import EbayClient
 class CompFetcher:
     """Fetches eBay sold comps for a product and caches them in the DB."""
 
-    def __init__(self, client: EbayClient, db: Session) -> None:
+    def __init__(self, client: EbayClient, db: Session, scraper=None) -> None:
         self._client = client
         self._db = db
         self._cfg = get_config()
+        self._scraper = scraper  # optional shared EbayScraper; avoids per-call browser launch
 
     def get_cached_comps(self, product_id: int, condition: str) -> Optional[List[EbayComp]]:
         cache_cutoff = datetime.now(timezone.utc) - timedelta(
@@ -56,7 +57,8 @@ class CompFetcher:
             comps = [_comp_from_api(item, product_id, condition) for item in raw]
         else:
             from .scraper import EbayScraper
-            raw = await EbayScraper().get_sold_listings(
+            scraper = self._scraper if self._scraper is not None else EbayScraper()
+            raw = await scraper.get_sold_listings(
                 query=ebay_query,
                 limit=cfg.ebay.max_comps_per_query,
                 condition=condition,

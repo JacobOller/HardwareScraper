@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -21,7 +22,41 @@ class EbayScraper:
     Fallback eBay sold-listing fetcher using Playwright with stealth mode
     and a persistent session. Used automatically when no API credentials
     are configured.
+
+    Supports two usage modes:
+    - Standalone (default): each get_sold_listings() call opens and closes its own
+      browser context. Simple but slow when called many times (1 browser launch/product).
+    - Shared session: use EbayScraper.session() as an async context manager to hold
+      one browser context open across all calls, eliminating per-product launch overhead.
     """
+
+    def __init__(self, context=None) -> None:
+        # If a shared context is provided, this instance uses it without closing it.
+        self._context = context
+
+    @classmethod
+    @asynccontextmanager
+    async def session(cls, session_dir: str = _SESSION_DIR):
+        """
+        Open one persistent browser context and yield a shared EbayScraper that
+        reuses it for every get_sold_listings() call. The context is closed on exit.
+
+        Usage:
+            async with EbayScraper.session() as scraper:
+                for product in products:
+                    results = await scraper.get_sold_listings(product.canonical_name)
+        """
+        from playwright.async_api import async_playwright
+        async with async_playwright() as pw:
+            ctx = await pw.chromium.launch_persistent_context(
+                user_data_dir=session_dir,
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            try:
+                yield cls(context=ctx)
+            finally:
+                await ctx.close()
 
     async def get_sold_listings(
         self,
@@ -29,7 +64,6 @@ class EbayScraper:
         limit: int = 50,
         condition: Optional[str] = None,
     ) -> list[dict]:
-        from playwright.async_api import async_playwright
         from playwright_stealth import Stealth
 
         params: dict[str, str] = {
@@ -43,39 +77,52 @@ class EbayScraper:
 
         base_url = _SEARCH_BASE + "?" + "&".join(f"{k}={v}" for k, v in params.items())
 
+        if self._context is not None:
+            # Shared context path: create a fresh page, search, then close the page.
+            # The browser process itself stays alive — no launch/teardown overhead.
+            page = await self._context.new_page()
+            try:
+                await Stealth().apply_stealth_async(page)
+                return await self._scrape_pages(page, base_url, limit)
+            finally:
+                await page.close()
+        else:
+            # Standalone path: open and close the full browser context per call.
+            from playwright.async_api import async_playwright
+            async with async_playwright() as pw:
+                ctx = await pw.chromium.launch_persistent_context(
+                    user_data_dir=_SESSION_DIR,
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+                page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+                await Stealth().apply_stealth_async(page)
+                results = await self._scrape_pages(page, base_url, limit)
+                await ctx.close()
+                return results
+
+    async def _scrape_pages(self, page, base_url: str, limit: int) -> list[dict]:
         results: list[dict] = []
+        page_num = 1
+        while len(results) < limit:
+            url = base_url + f"&_pgn={page_num}"
+            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+            await page.wait_for_timeout(3000)
 
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch_persistent_context(
-                user_data_dir=_SESSION_DIR,
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled"],
-            )
-            page = browser.pages[0] if browser.pages else await browser.new_page()
-            await Stealth().apply_stealth_async(page)
+            html = await page.content()
+            soup = BeautifulSoup(html, "html.parser")
 
-            page_num = 1
-            while len(results) < limit:
-                url = base_url + f"&_pgn={page_num}"
-                await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-                await page.wait_for_timeout(3000)
+            items = soup.select(".srp-results li")
+            found = 0
+            for item in items:
+                parsed = _parse_item(item)
+                if parsed:
+                    results.append(parsed)
+                    found += 1
 
-                html = await page.content()
-                soup = BeautifulSoup(html, "html.parser")
-
-                items = soup.select(".srp-results li")
-                found = 0
-                for item in items:
-                    parsed = _parse_item(item)
-                    if parsed:
-                        results.append(parsed)
-                        found += 1
-
-                if found == 0:
-                    break
-                page_num += 1
-
-            await browser.close()
+            if found == 0:
+                break
+            page_num += 1
 
         return results[:limit]
 

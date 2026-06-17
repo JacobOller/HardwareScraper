@@ -60,6 +60,7 @@ Phase 2A complete. Phase 2B (automation/Discord) and Phase 2E (for-parts + conso
 - [ ] Multi-zip scraping (Providence, Worcester, Boston — all within 45 min)
 - [ ] SQLite WAL mode to allow parallel keyword scrapes without locking
 - [ ] Listing expiry detection — mark sold/removed after N days
+- [x] **Reuse eBay browser session across valuations** — `EbayScraper.session()` async context manager holds one persistent Playwright context open for the entire `run_valuate()` run. `CompFetcher` accepts an optional `scraper` param. Eliminates per-product browser launch/teardown overhead (~4-5s each → one-time cost). Cuts valuate time from ~20 min to ~3-5 min for 300 listings.
 - [ ] Goal: thousands of listings per 30-minute cycle
 
 ### Phase 2E — For-Parts & Consoles ✅
@@ -76,7 +77,14 @@ don't know parts value. A broken PS5 at $100 or a GPU with bent pins at $50 can 
 
 ### Phase 2F — UI & Usability ✅
 - [x] **Basic web UI** — FastAPI + plain HTML/JS dashboard at `localhost:8000`; launch with `hardware-scraper ui`. Features: sortable results table (by margin/price/profit/category), filter by category/source/condition/tier, live job log panel, stat cards (total/profitable/excellent/for-parts/avg margin), dark theme.
-- [x] **One-click "scan all" command/button** — `hardware-scraper scan` CLI command runs full pipeline: browse OfferUp+FB → scrape all configured queries → valuate → report. Web UI "Scan All" button triggers the same via `/api/scan`.
+- [x] **One-click "scan all" command/button** — `hardware-scraper scan` CLI command runs full pipeline: browse OfferUp+FB → scrape all configured queries → valuate → LLM validate → report. Web UI "Scan All" button triggers the same via `/api/scan`.
+- [x] **Min/max price filters** — web UI filter inputs for asking price range.
+- [x] **Reset DB button** — `DELETE /api/reset` + web UI button wipes all listings/products/valuations.
+
+### Phase 2G — Data Quality (misrepresentations)
+- [x] **Expanded accessory noise filter** — 47 regex patterns in `is_accessory_noise()`: phone cases, console games with model numbers in title (e.g. "Xbox Series X game"), Steam Deck/Switch docks, console cases, cleaning/repair services, SSD/HDD enclosures. Applied at ingest so bad listings never enter DB.
+- [x] **LLM validation pass** — `pipeline/validate.py:run_llm_validate()` checks listings with margin >300% via Claude Haiku; drops accessories/services that slipped past regex. Runs at end of scan automatically.
+- [x] **Facebook city URL override** — `facebook.city_marketplace_url` config option; if set, browse uses that URL instead of lat/lon params (which Facebook often ignores). Lat/lon params also now include `radiusUnit=mi`.
 
 ---
 
@@ -122,4 +130,4 @@ Outbound shipping is per-category (see `config.yaml` `shipping.by_category`).
 
 ---
 
-*Last updated: 2026-06-16 (Phase 2E + 2F complete)*
+*Last updated: 2026-06-17 (Phase 2E + 2F + 2G complete; eBay session reuse; misrepresentation filter + LLM validation + FB city URL)*
