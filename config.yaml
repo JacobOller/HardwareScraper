@@ -46,6 +46,7 @@ scraping:
 facebook:
   session_dir: "data/facebook_session"  # persistent Playwright session for FB login
   enabled: true
+  headless: true               # set false for first login, then back to true
 
 search:
   queries:                    # default search terms; override via CLI --query

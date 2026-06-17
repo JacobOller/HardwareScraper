@@ -37,37 +37,29 @@ class CompFetcher:
     async def fetch_and_cache(
         self, product_id: int, canonical_name: str, condition: str
     ) -> List[EbayComp]:
-        items = await self._client.get_sold_listings(
-            query=canonical_name,
-            days_back=self._cfg.ebay.comps_days_back,
-            limit=self._cfg.ebay.max_comps_per_query,
-            condition=condition,
-        )
+        cfg = self._cfg
+        use_api = bool(cfg.ebay.app_id and cfg.ebay.cert_id)
 
-        comps = []
-        for item in items:
-            try:
-                price = float(item["price"]["value"])
-                shipping_cost = 0.0
-                if item.get("shippingOptions"):
-                    sc = item["shippingOptions"][0].get("shippingCost", {})
-                    shipping_cost = float(sc.get("value", 0))
-                sold_date = datetime.fromisoformat(
-                    item.get("itemEndDate", datetime.now(timezone.utc).isoformat()).replace("Z", "+00:00")
-                )
-                comp = EbayComp(
-                    product_id=product_id,
-                    condition=condition,
-                    sold_price=price,
-                    shipping=shipping_cost,
-                    ebay_item_id=item.get("itemId", ""),
-                    sold_date=sold_date,
-                )
-                self._db.add(comp)
-                comps.append(comp)
-            except (KeyError, ValueError, TypeError):
-                continue
+        if use_api:
+            raw = await self._client.get_sold_listings(
+                query=canonical_name,
+                days_back=cfg.ebay.comps_days_back,
+                limit=cfg.ebay.max_comps_per_query,
+                condition=condition,
+            )
+            comps = [_comp_from_api(item, product_id, condition) for item in raw]
+        else:
+            from .scraper import EbayScraper
+            raw = await EbayScraper().get_sold_listings(
+                query=canonical_name,
+                limit=cfg.ebay.max_comps_per_query,
+                condition=condition,
+            )
+            comps = [_comp_from_scraper(item, product_id, condition) for item in raw]
 
+        comps = [c for c in comps if c is not None]
+        for comp in comps:
+            self._db.add(comp)
         self._db.commit()
         return comps
 
@@ -87,3 +79,39 @@ class CompFetcher:
             return 0.0, 0
 
         return statistics.median(prices), len(prices)
+
+
+def _comp_from_api(item: dict, product_id: int, condition: str) -> Optional[EbayComp]:
+    try:
+        price = float(item["price"]["value"])
+        shipping = 0.0
+        if item.get("shippingOptions"):
+            sc = item["shippingOptions"][0].get("shippingCost", {})
+            shipping = float(sc.get("value", 0))
+        sold_date = datetime.fromisoformat(
+            item.get("itemEndDate", datetime.now(timezone.utc).isoformat()).replace("Z", "+00:00")
+        )
+        return EbayComp(
+            product_id=product_id,
+            condition=condition,
+            sold_price=price,
+            shipping=shipping,
+            ebay_item_id=item.get("itemId", ""),
+            sold_date=sold_date,
+        )
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def _comp_from_scraper(item: dict, product_id: int, condition: str) -> Optional[EbayComp]:
+    try:
+        return EbayComp(
+            product_id=product_id,
+            condition=condition,
+            sold_price=item["sold_price"],
+            shipping=item["shipping"],
+            ebay_item_id=item["ebay_item_id"],
+            sold_date=item["sold_date"],
+        )
+    except (KeyError, ValueError, TypeError):
+        return None

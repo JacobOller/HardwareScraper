@@ -150,7 +150,7 @@ def _make_scraper(cfg, source: str = "offerup"):
         return FacebookMarketplaceScraper(
             session_dir=cfg.facebook.session_dir,
             rate_limit_seconds=cfg.scraping.rate_limit_seconds,
-            headless=cfg.scraping.headless,
+            headless=cfg.facebook.headless,
         )
 
     from hardware_scraper.scrapers.offerup import OfferUpScraper

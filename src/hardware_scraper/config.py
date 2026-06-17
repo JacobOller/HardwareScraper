@@ -92,9 +92,10 @@ class LLMConfig(BaseSettings):
 
 
 class FacebookConfig:
-    def __init__(self, session_dir: str = "data/facebook_session", enabled: bool = True) -> None:
+    def __init__(self, session_dir: str = "data/facebook_session", enabled: bool = True, headless: bool = True) -> None:
         self.session_dir = session_dir
         self.enabled = enabled
+        self.headless = headless
 
 
 class AppConfig:
@@ -119,6 +120,7 @@ class AppConfig:
         self.facebook = FacebookConfig(
             session_dir=fb_raw.get("session_dir", "data/facebook_session"),
             enabled=bool(fb_raw.get("enabled", True)),
+            headless=bool(fb_raw.get("headless", True)),
         )
 
 
