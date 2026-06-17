@@ -92,10 +92,21 @@ class LLMConfig(BaseSettings):
 
 
 class FacebookConfig:
-    def __init__(self, session_dir: str = "data/facebook_session", enabled: bool = True, headless: bool = True) -> None:
+    def __init__(
+        self,
+        session_dir: str = "data/facebook_session",
+        enabled: bool = True,
+        headless: bool = True,
+        latitude: float = 0.0,
+        longitude: float = 0.0,
+        radius_miles: int = 40,
+    ) -> None:
         self.session_dir = session_dir
         self.enabled = enabled
         self.headless = headless
+        self.latitude = latitude
+        self.longitude = longitude
+        self.radius_miles = radius_miles
 
 
 class AppConfig:
@@ -121,6 +132,9 @@ class AppConfig:
             session_dir=fb_raw.get("session_dir", "data/facebook_session"),
             enabled=bool(fb_raw.get("enabled", True)),
             headless=bool(fb_raw.get("headless", True)),
+            latitude=float(fb_raw.get("latitude", 0.0)),
+            longitude=float(fb_raw.get("longitude", 0.0)),
+            radius_miles=int(fb_raw.get("radius_miles", self.scraping.radius_miles)),
         )
 
 

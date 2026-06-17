@@ -8,6 +8,8 @@ from .category_rules import (
     GPU_BRAND_PATTERNS, GPU_MODEL_PATTERNS,
     CPU_BRAND_PATTERNS, CPU_MODEL_PATTERNS,
     LAPTOP_BRAND_PATTERNS, LAPTOP_MODEL_PATTERNS,
+    CONSOLE_BRAND_PATTERNS, CONSOLE_MODEL_PATTERNS,
+    PHONE_BRAND_PATTERNS, PHONE_MODEL_PATTERNS,
     GPU_IN_SYSTEM_RE, CPU_IN_SYSTEM_RE,
     VRAM_PATTERN, RAM_CAPACITY_PATTERN,
     detect_category, detect_condition,
@@ -65,6 +67,15 @@ class TitleParser:
                 ram_m = RAM_CAPACITY_PATTERN.search(text)
                 if ram_m:
                     specs["ram_gb"] = int(ram_m.group(1))
+            elif category == "console":
+                brand = self._match_brand(text, CONSOLE_BRAND_PATTERNS)
+                model = self._match_model(text, CONSOLE_MODEL_PATTERNS)
+            elif category == "phone":
+                brand = self._match_brand(text, PHONE_BRAND_PATTERNS)
+                model = self._match_model(text, PHONE_MODEL_PATTERNS)
+                storage_m = re.search(r"(\d+)\s*GB\b", text, re.IGNORECASE)
+                if storage_m:
+                    specs["storage_gb"] = int(storage_m.group(1))
             elif category == "desktop":
                 # For complete systems, extract the key component for the eBay search.
                 # GPU is the primary differentiator for gaming PCs; fall back to CPU.
@@ -146,6 +157,26 @@ class TitleParser:
     ) -> Optional[str]:
         if not category:
             return None
+
+        if category == "console":
+            if not model:
+                return None
+            parts = []
+            if brand:
+                parts.append(brand)
+            parts.append(self._clean(model))
+            return " ".join(parts)
+
+        if category == "phone":
+            if not model:
+                return None
+            parts = []
+            if brand:
+                parts.append(brand)
+            parts.append(self._clean(model))
+            if "storage_gb" in specs:
+                parts.append(f"{specs['storage_gb']}GB")
+            return " ".join(parts)
 
         if category == "desktop":
             if not model:

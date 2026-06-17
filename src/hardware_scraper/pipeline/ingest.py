@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from typing import AsyncIterator, Optional
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hardware_scraper.config import get_config
+from hardware_scraper.db import make_engine
 from hardware_scraper.models import Listing, Product, ListingProduct
 from hardware_scraper.parsers.category_rules import is_refurb_noise
 from hardware_scraper.parsers.title_parser import ParsedTitle, TitleParser
@@ -22,7 +23,7 @@ async def run_ingest(
 
     cfg = get_config()
     console = Console()
-    engine = create_engine(cfg.database.url)
+    engine = make_engine(cfg.database.url)
     parser = TitleParser()
     llm_parser = _make_llm_parser(cfg, console)
 
@@ -57,7 +58,7 @@ async def run_browse(limit: int = 100, source: str = "offerup") -> None:
 
     cfg = get_config()
     console = Console()
-    engine = create_engine(cfg.database.url)
+    engine = make_engine(cfg.database.url)
     parser = TitleParser()
     llm_parser = _make_llm_parser(cfg, console)
 
@@ -84,6 +85,10 @@ async def run_browse(limit: int = 100, source: str = "offerup") -> None:
 def _store_listing(db, raw: RawListing, parser: TitleParser, llm_parser, cfg) -> tuple[int, int, int]:
     # Drop refurb reseller noise before touching the DB
     if is_refurb_noise(raw.title):
+        return 0, 0, 1
+
+    # Drop listings with failed price scraping
+    if raw.price is None or raw.price <= 0:
         return 0, 0, 1
 
     existing = db.execute(
@@ -151,6 +156,9 @@ def _make_scraper(cfg, source: str = "offerup"):
             session_dir=cfg.facebook.session_dir,
             rate_limit_seconds=cfg.scraping.rate_limit_seconds,
             headless=cfg.facebook.headless,
+            latitude=cfg.facebook.latitude,
+            longitude=cfg.facebook.longitude,
+            radius_miles=cfg.facebook.radius_miles,
         )
 
     from hardware_scraper.scrapers.offerup import OfferUpScraper

@@ -28,6 +28,8 @@ shipping:
     case: 30.00
     laptop: 15.00
     desktop: 40.00
+    console: 12.00
+    phone: 8.00
 
 margin_tiers:
   excellent: 50               # >= 50% → Tier 1: Excellent
@@ -47,6 +49,9 @@ facebook:
   session_dir: "data/facebook_session"  # persistent Playwright session for FB login
   enabled: true
   headless: true               # set false for first login, then back to true
+  latitude: 41.9762            # North Attleborough MA (zip 02766)
+  longitude: -71.3326
+  radius_miles: 40             # matches scraping.radius_miles
 
 search:
   queries:                    # default search terms; override via CLI --query
@@ -58,6 +63,18 @@ search:
     - "i9-12900"
     - "Ryzen 7 5800X"
     - "Ryzen 9 5900X"
+    - "PS5"
+    - "Xbox Series X"
+    - "Nintendo Switch"
+    - "Steam Deck"
+    - "broken laptop"
+    - "broken ps5"
+    - "broken xbox"
+    - "gpu not working"
+    - "for parts desktop"
+    - "cracked screen iphone"
+    - "iPhone 14"
+    - "iPhone 15"
 
 database:
   url: "sqlite:///data/hardware_scraper.db"

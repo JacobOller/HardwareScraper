@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hardware_scraper.config import get_config
+from hardware_scraper.db import make_engine
 from hardware_scraper.ebay.client import EbayClient
 from hardware_scraper.ebay.comp_fetcher import CompFetcher
 from hardware_scraper.models import Listing, ListingProduct, Product, Valuation
@@ -15,7 +16,7 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
 
     cfg = get_config()
     console = Console()
-    engine = create_engine(cfg.database.url)
+    engine = make_engine(cfg.database.url)
 
     ebay_client = EbayClient(
         app_id=cfg.ebay.app_id,

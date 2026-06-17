@@ -7,8 +7,7 @@ from typing import AsyncIterator, Optional
 
 from .base import BaseScraper, RawListing
 
-_SEARCH_URL = "https://www.facebook.com/marketplace/search/?query={query}&exact=false"
-_BROWSE_URL = "https://www.facebook.com/marketplace/local/"
+_SEARCH_BASE = "https://www.facebook.com/marketplace/search/"
 _ITEM_URL = "https://www.facebook.com/marketplace/item/{item_id}/"
 
 # FB item IDs in URLs
@@ -34,18 +33,33 @@ class FacebookMarketplaceScraper(BaseScraper):
         session_dir: str = "data/facebook_session",
         rate_limit_seconds: float = 3.0,
         headless: bool = True,
+        latitude: float = 0.0,
+        longitude: float = 0.0,
+        radius_miles: int = 40,
     ) -> None:
         super().__init__(rate_limit_seconds)
         self._session_dir = session_dir
         self._headless = headless
+        self._latitude = latitude
+        self._longitude = longitude
+        self._radius_miles = radius_miles
+
+    def _loc_params(self) -> str:
+        """Return location query-string fragment if coordinates are configured."""
+        if self._latitude and self._longitude:
+            return f"&latitude={self._latitude}&longitude={self._longitude}&radius={self._radius_miles}"
+        return ""
 
     async def search(self, query: str, limit: int = 50) -> AsyncIterator[RawListing]:
-        url = _SEARCH_URL.format(query=query.replace(" ", "+"))
+        q = query.replace(" ", "+")
+        url = f"{_SEARCH_BASE}?query={q}&exact=false{self._loc_params()}"
         async for listing in self._scrape(url, limit):
             yield listing
 
     async def browse(self, limit: int = 100) -> AsyncIterator[RawListing]:
-        async for listing in self._scrape(_BROWSE_URL, limit):
+        # Browse uses an empty query so we get all local listings
+        url = f"{_SEARCH_BASE}?query=&exact=false{self._loc_params()}"
+        async for listing in self._scrape(url, limit):
             yield listing
 
     async def _scrape(self, url: str, limit: int) -> AsyncIterator[RawListing]:

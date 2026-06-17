@@ -35,11 +35,11 @@ Description: {description or "(none)"}
 
 Return a JSON object with these fields (use null if unknown):
 {{
-  "category": one of ["gpu","cpu","ram","ssd","hdd","motherboard","psu","cooling","case","laptop","desktop"] or null,
+  "category": one of ["gpu","cpu","ram","ssd","hdd","motherboard","psu","cooling","case","laptop","desktop","console","phone"] or null,
   "brand": manufacturer name string or null,
-  "model": specific model string (e.g. "RTX 3080", "i7-12700K") or null,
-  "condition": one of ["used","like_new","for_parts"],
-  "specs": object with known specs (e.g. {{"vram_gb": 10}} for GPUs, {{"capacity_gb": 32}} for RAM) or {{}}
+  "model": specific model string (e.g. "RTX 3080", "i7-12700K", "PS5 Digital Edition", "iPhone 15 Pro") or null,
+  "condition": one of ["used","like_new","for_parts"] — use "for_parts" for broken/damaged/not working/no display/cracked screen/water damage items,
+  "specs": object with known specs (e.g. {{"vram_gb": 10}} for GPUs, {{"capacity_gb": 32}} for RAM, {{"storage_gb": 256}} for phones) or {{}}
 }}"""
 
 
@@ -52,7 +52,12 @@ def _parse_response(text: str) -> ParsedTitle:
             if text.startswith("json"):
                 text = text[4:]
         data = json.loads(text.strip())
+        if isinstance(data, list):
+            data = data[0] if data else {}
     except (json.JSONDecodeError, IndexError):
+        return _empty_parsed()
+
+    if not isinstance(data, dict):
         return _empty_parsed()
 
     category: Optional[str] = data.get("category")

@@ -40,9 +40,15 @@ class CompFetcher:
         cfg = self._cfg
         use_api = bool(cfg.ebay.app_id and cfg.ebay.cert_id)
 
+        # For broken items, append keyword to narrow to the for-parts market.
+        # eBay condition filter 7000 is also applied by the scraper for this condition.
+        ebay_query = canonical_name
+        if condition == "for_parts":
+            ebay_query = f"{canonical_name} for parts"
+
         if use_api:
             raw = await self._client.get_sold_listings(
-                query=canonical_name,
+                query=ebay_query,
                 days_back=cfg.ebay.comps_days_back,
                 limit=cfg.ebay.max_comps_per_query,
                 condition=condition,
@@ -51,7 +57,7 @@ class CompFetcher:
         else:
             from .scraper import EbayScraper
             raw = await EbayScraper().get_sold_listings(
-                query=canonical_name,
+                query=ebay_query,
                 limit=cfg.ebay.max_comps_per_query,
                 condition=condition,
             )

@@ -70,6 +70,58 @@ def fb_scrape(
 
 
 @app.command()
+def scan(
+    min_confidence: float = typer.Option(0.5, "--min-confidence", help="Min confidence for valuation"),
+) -> None:
+    """Full pipeline: browse + scrape all configured queries on all sources + valuate + report."""
+    from hardware_scraper.config import get_config
+    from hardware_scraper.pipeline.ingest import run_browse, run_ingest
+    from hardware_scraper.pipeline.valuate import run_valuate
+    from hardware_scraper.output.reporter import run_report
+
+    cfg = get_config()
+
+    async def _run():
+        for source in ["offerup", "facebook"]:
+            console.print(f"[cyan]Browsing {source}...[/cyan]")
+            try:
+                await run_browse(source=source)
+            except Exception as exc:
+                console.print(f"[red]Browse {source} error: {exc}[/red]")
+
+        for q in cfg.search.queries:
+            for source in ["offerup", "facebook"]:
+                console.print(f"[cyan]Scraping {source}: {q!r}...[/cyan]")
+                try:
+                    await run_ingest(query=q, source=source)
+                except Exception as exc:
+                    console.print(f"[red]Scrape {source} {q!r} error: {exc}[/red]")
+
+        console.print("[cyan]Valuating...[/cyan]")
+        await run_valuate(min_confidence=min_confidence)
+
+    asyncio.run(_run())
+    run_report()
+
+
+@app.command()
+def ui(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind to"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port to serve on"),
+) -> None:
+    """Launch the web dashboard on localhost:8000."""
+    import uvicorn
+    console.print(f"[green]Starting HardwareScraper UI at http://{host}:{port}[/green]")
+    uvicorn.run(
+        "hardware_scraper.web.app:app",
+        host=host,
+        port=port,
+        reload=False,
+        log_level="warning",
+    )
+
+
+@app.command()
 def db_upgrade() -> None:
     """Apply pending Alembic migrations."""
     import subprocess, sys

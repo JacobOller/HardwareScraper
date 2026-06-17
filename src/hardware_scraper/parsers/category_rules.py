@@ -8,9 +8,21 @@ from typing import Optional
 # Category keyword rules
 # ---------------------------------------------------------------------------
 
-# System-level categories (desktop, laptop) are checked FIRST before components.
-# This ensures "Gaming PC with RTX 2060" → desktop, not gpu.
+# System-level categories checked FIRST. Order matters:
+#   console > phone > desktop > laptop > components
+# "Gaming PC with RTX 2060" → desktop, not gpu.
+# "PS5 console" → console, not desktop.
 _SYSTEM_CATEGORY_PATTERNS: list[tuple[str, list[str]]] = [
+    ("console", [
+        r"\bps5\b", r"\bplaystation\s*5\b", r"\bps4\s*(?:pro|slim)?\b", r"\bplaystation\s*4\b",
+        r"\bxbox\s+series\s+[xs]\b", r"\bxbox\s+one\s*[xs]?\b",
+        r"\bnintendo\s+switch\b", r"\bswitch\s+oled\b", r"\bswitch\s+lite\b",
+        r"\bsteam\s+deck\b",
+    ]),
+    ("phone", [
+        r"\biphone\s*(?:se|mini|\d+)\b", r"\biphone\s+pro\b", r"\biphone\s+max\b",
+        r"\bsamsung\s+galaxy\s+[as]\d+", r"\bgoogle\s+pixel\s+\d+",
+    ]),
     ("desktop", [
         r"\bdesktop\b", r"\bprebuilt\b", r"\bgaming\s+pc\b", r"\bcomplete\s+build\b",
         r"\bgaming\s+computer\b", r"\bcustom\s+build\b", r"\bfull\s+build\b",
@@ -41,8 +53,16 @@ _COMPONENT_CATEGORY_PATTERNS: list[tuple[str, list[str]]] = [
 ]
 
 _CONDITION_PATTERNS: list[tuple[str, list[str]]] = [
-    ("for_parts", [r"\bfor\s+parts?\b", r"\bnot\s+working\b", r"\bbroken\b", r"\bdead\b",
-                   r"\buntested\b", r"\bas[- ]is\b"]),
+    ("for_parts", [
+        r"\bfor\s+parts?\b", r"\bnot\s+working\b", r"\bbroken\b", r"\bdead\b",
+        r"\buntested\b", r"\bas[- ]is\b", r"\bno\s+display\b", r"\bno\s+post\b",
+        r"\bno\s+power\b", r"\bwon['’]?t\s+power\s+on\b", r"\bpowers?\s+on\s+but\b",
+        r"\bcracked\s+screen\b", r"\bshattered\s+screen\b", r"\bbad\s+battery\b",
+        r"\bbent\s+pins?\b", r"\bwater\s+damage[d]?\b", r"\bwater\s+damaged?\b",
+        r"\bbad\s+gpu\b", r"\bbios\s+only\b", r"\bsold\s+as\s+is\b",
+        r"\bdoes\s+not\s+turn\s+on\b", r"\bwont\s+turn\s+on\b", r"\bno\s+boot\b",
+        r"\bdamaged\b",
+    ]),
     ("like_new", [r"\blike\s+new\b", r"\bopen\s+box\b", r"\bsealed\b", r"\bnib\b",
                   r"\bnever\s+used\b", r"\bmint\b"]),
     ("used", []),  # default / fallback
@@ -117,7 +137,8 @@ LAPTOP_BRAND_PATTERNS = [
 LAPTOP_MODEL_PATTERNS = [
     r"(ThinkPad\s+X1\s+(?:Carbon|Yoga|Extreme|Nano)(?:\s+Gen\s*\d+)?)",
     r"(ThinkPad\s+[A-Z]\d+[a-z]?(?:\s+Gen\s*\d+)?)",
-    r"(MacBook\s+(?:Pro|Air)(?:\s+M\d)?(?:\s+\d{4})?)",
+    # MacBook: capture screen size (14/16/13 inch), chip (M1/M2/M3/M4/M5 + Pro/Max/Ultra), year
+    r"(MacBook\s+(?:Pro|Air)(?:\s+\d{2}(?:[- ]?inch)?)?(?:\s+M\d+(?:\s+(?:Pro|Max|Ultra))?)?(?:\s+\d{4})?)",
     r"(EliteBook\s+\d+\w*\s*G\d+)",
     r"(ProBook\s+\d+\w*\s*G\d*)",
     r"(Latitude\s+[A-Z]?\d+\w*)",
@@ -131,6 +152,45 @@ LAPTOP_MODEL_PATTERNS = [
     r"(Aspire\s+\w+(?:\s+\w+)?)",
     r"(Nitro\s+\d+\w*)",
     r"(Razer\s+Blade\s+\w*)",
+]
+
+# ---------------------------------------------------------------------------
+# Brand / model regexes — consoles
+# ---------------------------------------------------------------------------
+
+CONSOLE_BRAND_PATTERNS = [
+    (r"\bsony\b|\bplaystation\b|\bps[45]\b", "Sony"),
+    (r"\bmicrosoft\b|\bxbox\b", "Microsoft"),
+    (r"\bnintendo\b|\bswitch\b", "Nintendo"),
+    (r"\bvalve\b|\bsteam\s+deck\b", "Valve"),
+]
+
+CONSOLE_MODEL_PATTERNS = [
+    r"(PS5\s*(?:Digital\s+Edition|Disc\s+Edition)?)",
+    r"(PlayStation\s*5\s*(?:Digital\s+Edition|Disc\s+Edition)?)",
+    r"(Xbox\s+Series\s+[XS])",
+    r"(Nintendo\s+Switch\s*(?:OLED|Lite|V2)?)",
+    r"(Switch\s*(?:OLED|Lite|V2)?)",
+    r"(Steam\s+Deck\s*(?:\d+\s*GB)?)",
+    r"(PS4\s*(?:Pro|Slim)?)",
+    r"(PlayStation\s*4\s*(?:Pro|Slim)?)",
+    r"(Xbox\s+One\s*[XS]?)",
+]
+
+# ---------------------------------------------------------------------------
+# Brand / model regexes — phones
+# ---------------------------------------------------------------------------
+
+PHONE_BRAND_PATTERNS = [
+    (r"\bapple\b|\biphone\b", "Apple"),
+    (r"\bsamsung\b|\bgalaxy\b", "Samsung"),
+    (r"\bgoogle\b|\bpixel\b", "Google"),
+]
+
+PHONE_MODEL_PATTERNS = [
+    r"(iPhone\s+(?:SE|mini|\d+)\s*(?:Pro\s+Max|Pro|Plus|Max)?)",
+    r"(Galaxy\s+[AS]\d+\s*(?:Ultra|Plus|\+)?)",
+    r"(Pixel\s+\d+\s*(?:Pro|XL|a)?)",
 ]
 
 # Used inside desktop canonical name building

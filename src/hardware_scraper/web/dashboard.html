@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HardwareScraper</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; }
+  header { background: #1a1a2e; padding: 16px 24px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #2a2a4a; }
+  header h1 { font-size: 1.3rem; color: #7eb8f7; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; padding: 16px 24px; background: #111; border-bottom: 1px solid #222; }
+  button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: opacity 0.15s; }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-scan   { background: #2563eb; color: #fff; }
+  .btn-browse { background: #16a34a; color: #fff; }
+  .btn-scrape { background: #d97706; color: #fff; }
+  .btn-valuate { background: #7c3aed; color: #fff; }
+  .btn-refresh { background: #374151; color: #e0e0e0; }
+  .source-select { padding: 8px 12px; background: #1f1f1f; color: #e0e0e0; border: 1px solid #333; border-radius: 6px; font-size: 0.85rem; }
+  .status-bar { padding: 8px 24px; background: #111; font-size: 0.78rem; color: #6b7280; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #222; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
+  .pulse.idle { background: #374151; animation: none; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .main { padding: 20px 24px; }
+  .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 14px 20px; min-width: 140px; }
+  .stat-card .label { font-size: 0.72rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-card .value { font-size: 1.6rem; font-weight: 700; margin-top: 4px; }
+  .filters { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .filters input, .filters select { padding: 7px 12px; background: #1f1f1f; color: #e0e0e0; border: 1px solid #333; border-radius: 6px; font-size: 0.82rem; }
+  .filters input { width: 220px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { text-align: left; padding: 10px 12px; background: #1a1a1a; color: #9ca3af; font-weight: 600; cursor: pointer; user-select: none; border-bottom: 1px solid #2a2a2a; white-space: nowrap; }
+  th:hover { color: #e0e0e0; }
+  th .sort-arrow { margin-left: 4px; opacity: 0.4; }
+  th.sorted .sort-arrow { opacity: 1; color: #7eb8f7; }
+  td { padding: 9px 12px; border-bottom: 1px solid #1a1a1a; vertical-align: middle; }
+  tr:hover td { background: #161616; }
+  .tier-1 { color: #22c55e; font-weight: 700; }
+  .tier-2 { color: #86efac; font-weight: 600; }
+  .tier-3 { color: #fbbf24; }
+  .tier-4 { color: #9ca3af; }
+  .tier-5 { color: #f87171; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
+  .badge-for_parts { background: #7c2d12; color: #fdba74; }
+  .badge-like_new  { background: #14532d; color: #86efac; }
+  .badge-used      { background: #1f2937; color: #9ca3af; }
+  .source-fb { color: #60a5fa; }
+  .source-ou { color: #a78bfa; }
+  a { color: #7eb8f7; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .log-panel { background: #0a0a0a; border: 1px solid #222; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.75rem; height: 160px; overflow-y: auto; color: #6b7280; margin-top: 20px; }
+  .log-panel .entry { margin-bottom: 2px; }
+  .log-panel .entry.error { color: #f87171; }
+  .empty { text-align: center; padding: 60px; color: #374151; }
+  .empty p { margin-top: 8px; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>HardwareScraper</h1>
+  <span id="last-refresh" style="font-size:0.75rem;color:#6b7280;margin-left:auto;"></span>
+</header>
+
+<div class="controls">
+  <button class="btn-scan" onclick="scan()">Scan All</button>
+  <select class="source-select" id="source-sel">
+    <option value="offerup">OfferUp</option>
+    <option value="facebook">Facebook</option>
+  </select>
+  <button class="btn-browse" onclick="browse()">Browse</button>
+  <input type="text" id="query-input" placeholder="keyword (optional)" style="padding:7px 12px;background:#1f1f1f;color:#e0e0e0;border:1px solid #333;border-radius:6px;font-size:0.82rem;width:200px;">
+  <button class="btn-scrape" onclick="scrape()">Scrape</button>
+  <button class="btn-valuate" onclick="valuate()">Valuate</button>
+  <button class="btn-refresh" onclick="loadResults()">Refresh</button>
+</div>
+
+<div class="status-bar">
+  <span id="job-dot" class="pulse idle"></span>
+  <span id="job-label">Idle</span>
+</div>
+
+<div class="main">
+  <div class="stats" id="stats"></div>
+
+  <div class="filters">
+    <input type="text" id="filter-text" placeholder="Filter by title..." oninput="render()">
+    <select id="filter-cat" onchange="render()">
+      <option value="">All categories</option>
+      <option>gpu</option><option>cpu</option><option>ram</option><option>ssd</option>
+      <option>motherboard</option><option>laptop</option><option>desktop</option>
+      <option>console</option><option>phone</option><option>psu</option><option>cooling</option>
+    </select>
+    <select id="filter-src" onchange="render()">
+      <option value="">All sources</option>
+      <option value="offerup">OfferUp</option>
+      <option value="facebook">Facebook</option>
+    </select>
+    <select id="filter-cond" onchange="render()">
+      <option value="">All conditions</option>
+      <option value="for_parts">For Parts</option>
+      <option value="used">Used</option>
+      <option value="like_new">Like New</option>
+    </select>
+    <select id="filter-tier" onchange="render()">
+      <option value="">All tiers</option>
+      <option value="1">Excellent (≥50%)</option>
+      <option value="2">Good (≥30%)</option>
+      <option value="3">Marginal (≥15%)</option>
+      <option value="4">Low (≥0%)</option>
+      <option value="5">Overpriced</option>
+    </select>
+  </div>
+
+  <table id="results-table">
+    <thead>
+      <tr>
+        <th onclick="sort('title')">Title <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('source')">Source <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('category')">Category <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('condition')">Condition <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('price')" style="text-align:right">Ask <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('ebay_median')" style="text-align:right">eBay Med <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('profit')" style="text-align:right">Profit <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('margin_pct')" style="text-align:right">Margin <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('margin_tier')">Tier <span class="sort-arrow">↕</span></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <div class="log-panel" id="log-panel"></div>
+</div>
+
+<script>
+let _data = [];
+let _sortKey = 'margin_pct';
+let _sortDir = -1; // -1 = desc
+
+async function post(url) {
+  const r = await fetch(url, { method: 'POST' });
+  const j = await r.json();
+  if (j.error) alert(j.error);
+}
+
+function source() { return document.getElementById('source-sel').value; }
+function query()  { return document.getElementById('query-input').value.trim(); }
+
+async function scan()    { await post('/api/scan'); pollStatus(); }
+async function browse()  { await post('/api/browse?source=' + source()); pollStatus(); }
+async function scrape()  {
+  const q = query();
+  await post('/api/scrape?source=' + source() + (q ? '&query=' + encodeURIComponent(q) : ''));
+  pollStatus();
+}
+async function valuate() { await post('/api/valuate'); pollStatus(); }
+
+async function loadResults() {
+  const r = await fetch('/api/results');
+  _data = await r.json();
+  document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  renderStats();
+  render();
+}
+
+function renderStats() {
+  const total = _data.length;
+  const profitable = _data.filter(d => d.margin_pct >= 15).length;
+  const excellent  = _data.filter(d => d.margin_tier === 1).length;
+  const parts      = _data.filter(d => d.condition === 'for_parts').length;
+  const avg = total ? (_data.reduce((s,d)=>s+d.margin_pct,0)/total).toFixed(1) : 0;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="label">Listings</div><div class="value">${total}</div></div>
+    <div class="stat-card"><div class="label">Profitable</div><div class="value" style="color:#22c55e">${profitable}</div></div>
+    <div class="stat-card"><div class="label">Excellent</div><div class="value" style="color:#22c55e">${excellent}</div></div>
+    <div class="stat-card"><div class="label">For Parts</div><div class="value" style="color:#fb923c">${parts}</div></div>
+    <div class="stat-card"><div class="label">Avg Margin</div><div class="value" style="color:#7eb8f7">${avg}%</div></div>
+  `;
+}
+
+function sort(key) {
+  if (_sortKey === key) { _sortDir *= -1; }
+  else { _sortKey = key; _sortDir = key === 'title' || key === 'category' ? 1 : -1; }
+  document.querySelectorAll('th').forEach(th => th.classList.remove('sorted'));
+  event.currentTarget.classList.add('sorted');
+  render();
+}
+
+function render() {
+  const txt  = document.getElementById('filter-text').value.toLowerCase();
+  const cat  = document.getElementById('filter-cat').value;
+  const src  = document.getElementById('filter-src').value;
+  const cond = document.getElementById('filter-cond').value;
+  const tier = document.getElementById('filter-tier').value;
+
+  let rows = _data.filter(d =>
+    (!txt  || d.title.toLowerCase().includes(txt)) &&
+    (!cat  || d.category === cat) &&
+    (!src  || d.source === src) &&
+    (!cond || d.condition === cond) &&
+    (!tier || String(d.margin_tier) === tier)
+  );
+
+  rows.sort((a, b) => {
+    const av = a[_sortKey] ?? '', bv = b[_sortKey] ?? '';
+    return typeof av === 'string'
+      ? _sortDir * av.localeCompare(bv)
+      : _sortDir * (av - bv);
+  });
+
+  const tbody = document.getElementById('tbody');
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">No results.<p>Run "Scan All" to fetch listings, then "Valuate".</p></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(d => {
+    const tc = `tier-${d.margin_tier}`;
+    const src_label = d.source === 'facebook'
+      ? `<span class="source-fb">FB</span>`
+      : `<span class="source-ou">OU</span>`;
+    const cond_badge = `<span class="badge badge-${d.condition}">${d.condition.replace('_',' ')}</span>`;
+    return `<tr>
+      <td><a href="${d.url}" target="_blank">${d.title.substring(0,48)}</a></td>
+      <td>${src_label}</td>
+      <td>${d.category}</td>
+      <td>${cond_badge}</td>
+      <td style="text-align:right">$${d.price.toFixed(0)}</td>
+      <td style="text-align:right">$${d.ebay_median.toFixed(0)} <small style="color:#6b7280">(${d.comp_count})</small></td>
+      <td style="text-align:right" class="${tc}">$${d.profit.toFixed(0)}</td>
+      <td style="text-align:right" class="${tc}">${d.margin_pct.toFixed(1)}%</td>
+      <td class="${tc}">${d.margin_label}</td>
+    </tr>`;
+  }).join('');
+}
+
+let _pollTimer = null;
+async function pollStatus() {
+  const r = await fetch('/api/status');
+  const s = await r.json();
+  const dot = document.getElementById('job-dot');
+  const lbl = document.getElementById('job-label');
+  if (s.running) {
+    dot.classList.remove('idle');
+    lbl.textContent = 'Running…';
+    _pollTimer = setTimeout(pollStatus, 1500);
+  } else {
+    dot.classList.add('idle');
+    lbl.textContent = 'Idle';
+    if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
+    loadResults();
+  }
+  const logEl = document.getElementById('log-panel');
+  logEl.innerHTML = s.log.map(l =>
+    `<div class="entry${l.includes('ERROR') ? ' error' : ''}">${l}</div>`
+  ).join('');
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Boot
+loadResults();
+</script>
+</body>
+</html>

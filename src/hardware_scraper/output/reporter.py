@@ -7,10 +7,10 @@ from typing import Optional
 
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from hardware_scraper.config import get_config
+from hardware_scraper.db import make_engine
 from hardware_scraper.models import Listing, Valuation
 
 console = Console()
@@ -20,7 +20,7 @@ _TIER_COLORS = {1: "bright_green", 2: "green", 3: "yellow", 4: "white", 5: "red"
 
 def run_report(min_margin: Optional[int] = None, export_csv: bool = False) -> None:
     cfg = get_config()
-    engine = create_engine(cfg.database.url)
+    engine = make_engine(cfg.database.url)
     threshold = min_margin if min_margin is not None else cfg.output.min_margin_to_show
 
     with Session(engine) as db:

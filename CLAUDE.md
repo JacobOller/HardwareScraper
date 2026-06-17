@@ -152,19 +152,22 @@ Outbound shipping is per-category from `config.yaml` `shipping.by_category` (e.g
 ## Product Identification Pipeline
 
 1. Refurb noise filter — `is_refurb_noise(title)` drops `SHOP\d+` / `INV.\d+` patterns before DB write
-2. Category detection — **system categories (desktop, laptop) checked first**, then components; prevents "Gaming PC with RTX 2060" → gpu misidentification
-3. Brand/model extraction:
+2. **$0 price filter** — listings with `price is None or price <= 0` dropped before DB write
+3. Category detection — **priority order: console > phone > desktop > laptop > components**; prevents "Gaming PC with RTX 2060" → gpu misidentification, "PS5 gaming console" → desktop
+4. Brand/model extraction:
    - GPU: `RTX \d{4}`, `GTX \d{4}`, `RX \d{4}` patterns
    - CPU: `i[3579]-\d{4,5}`, Ryzen patterns
-   - Laptop: brand (Lenovo/Dell/HP/Apple/ASUS/etc.) + specific model (ThinkPad T460, MacBook Pro M1, EliteBook 840 G8, XPS 15, etc.)
+   - Laptop: brand + specific model; MacBook captures screen size + chip variant + year (`"Apple MacBook Pro 14 M3 Pro 2023"`)
    - Desktop: GPU or CPU extracted for system-level eBay search (canonical = "Gaming PC RTX 3080")
-4. Spec extraction (VRAM GB, RAM GB)
-5. Condition inference ("for parts", "like new", "used")
-6. Confidence score: 0.3 (category) + 0.2 (brand) + 0.4 (model) + 0.1 (explicit condition)
-7. If confidence < `llm.confidence_threshold` (default 0.5) and `llm.enabled: true`, falls back to `LLMParser`
-8. Listings with final confidence < 0.5 are stored as `status=new` but not valuated
+   - **Console**: brand (Sony/Microsoft/Nintendo/Valve) + model (PS5/Xbox Series X/Switch OLED/Steam Deck)
+   - **Phone**: brand (Apple/Samsung/Google) + model (iPhone 15 Pro Max / Galaxy S23 Ultra)
+5. Spec extraction (VRAM GB, RAM GB, storage GB for phones)
+6. Condition inference — 20+ patterns including: "for parts", "not working", "broken", "no display", "cracked screen", "bent pins", "water damage", "bios only", "no post", "won't power on", etc.
+7. Confidence score: 0.3 (category) + 0.2 (brand) + 0.4 (model) + 0.1 (explicit condition)
+8. If confidence < `llm.confidence_threshold` (default 0.5) and `llm.enabled: true`, falls back to `LLMParser`
+9. Listings with final confidence < 0.5 are stored as `status=new` but not valuated
 
-Canonical name examples: `"NVIDIA RTX 3080 10GB"`, `"AMD Ryzen 7 5800X"`, `"Lenovo ThinkPad T460"`, `"Gaming PC RTX 2060"`
+Canonical name examples: `"NVIDIA RTX 3080 10GB"`, `"AMD Ryzen 7 5800X"`, `"Lenovo ThinkPad T460"`, `"Gaming PC RTX 2060"`, `"Sony PS5 Digital Edition"`, `"Apple iPhone 15 Pro Max 256GB"`, `"Apple MacBook Pro 14 M3 Pro 2023"`
 
 ## LLM Fallback
 
@@ -179,6 +182,10 @@ Canonical name examples: `"NVIDIA RTX 3080 10GB"`, `"AMD Ryzen 7 5800X"`, `"Leno
 ```powershell
 # Always activate venv first
 .venv\Scripts\Activate.ps1
+
+# Full pipeline (recommended day-to-day)
+hardware-scraper scan                              # browse + scrape all queries + valuate + report
+hardware-scraper ui                                # launch web dashboard at http://localhost:8000
 
 # OfferUp
 hardware-scraper scrape --query "RTX 3080"        # scrape OfferUp by keyword
@@ -196,6 +203,20 @@ hardware-scraper report                            # show ranked results (Rich t
 hardware-scraper report --csv                      # also save to data/exports/
 hardware-scraper db-upgrade                        # apply Alembic migrations
 ```
+
+## Web UI
+
+Launch with `hardware-scraper ui` → opens `http://localhost:8000`.
+
+- Dark-themed dashboard showing all valuated listings
+- **Scan All** button — runs the full pipeline (browse + all queries + valuate)
+- **Browse** / **Scrape** buttons — per-source controls with source selector + keyword input
+- **Valuate** button — re-runs margin calculation on new identified listings
+- Sortable columns: click any column header to sort ascending/descending
+- Filters: text search, category, source (OfferUp/Facebook), condition, margin tier
+- Stat cards: total listings, profitable count, excellent count, for-parts count, avg margin
+- Live job log panel — shows progress while a scan/scrape runs, auto-refreshes
+- Results auto-refresh after any job completes
 
 ## config.yaml Key Values
 
@@ -225,6 +246,8 @@ shipping:
     case: 30.00
     laptop: 15.00
     desktop: 40.00
+    console: 12.00
+    phone: 8.00
 
 ebay:
   app_id: ""                   # empty = use scraper fallback
@@ -248,3 +271,19 @@ output:
 - **All comps cached per (product_id, condition) for 24h** — run `scripts/reset_valuations.py` to force fresh fetch.
 - **OfferUp listing URLs** use UUID format: `https://offerup.com/item/detail/{uuid}` — links go dead quickly when sellers remove listings.
 - **Desktop confidence = 0.7** — desktop listings with a GPU identified get confidence 0.7 (category + model), which clears the 0.5 valuation threshold but may still miss some edge cases without LLM.
+- **MacBook screen size ordering** — MacBook regex captures size + chip in left-to-right order; if a seller writes "MacBook Pro M3 14-inch" (chip before size), only chip is captured, not size. Acceptable limitation.
+- **venv not committed** — the `.venv/` directory is gitignored and must be created fresh on a new machine: `python -m venv .venv && .venv/Scripts/pip install -e ".[dev]" && .venv/Scripts/playwright install chromium`. The `data/` directory must also be created: `mkdir -p data/browser_session data/facebook_session data/ebay_session data/exports`.
+- **LLM parser list-vs-dict (fixed 2026-06-16)** — Claude Haiku sometimes returns `[{...}]` instead of `{...}`. `llm_parser.py:_parse_response` now unwraps single-element arrays.
+- **$0 price filter (fixed 2026-06-16)** — listings with price ≤ 0 now dropped at ingest.
+- **MacBook comp accuracy (fixed 2026-06-16)** — canonical names now include chip gen + year (e.g., `"Apple MacBook Pro 14 M3 2023"`).
+- **For-parts eBay search (fixed 2026-06-16)** — `condition=for_parts` now appends "for parts" keyword + uses `LH_ItemCondition=7000` filter.
+- **Console/phone categories (added 2026-06-16)** — PS5, Xbox Series X/S, Switch, Steam Deck, iPhone, Galaxy, Pixel now identified and valuated.
+- **Parallel scraping safety (fixed 2026-06-16)** — `make_engine()` in `db.py` enables WAL mode + 5s busy timeout; `hardware-scraper scan` runs sources sequentially.
+
+## For-Parts Strategy
+
+The user is willing to buy and repair broken electronics (CPUs, GPUs, MOBOs, laptops, desktops, gaming consoles). For-parts listings are often the most profitable deals because non-technical sellers dramatically underprice broken items, and common repairs (thermal paste, bent pins, reflow, screen replacement, battery) are cheap.
+
+The eBay comp for `condition=for_parts` now appends "for parts" to the keyword search and uses eBay's condition filter 7000 (For Parts/Not Working), so comps reflect the actual broken-item market.
+
+High-value for-parts targets: PS5 ($100-200 broken → $200-300 parts), RTX 30XX GPUs ($80-150 broken → $150-250 parts), MacBooks with bad battery/screen ($100-200 → $300-600 repaired), iPhones with cracked screens.
