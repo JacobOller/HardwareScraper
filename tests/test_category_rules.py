@@ -1,5 +1,5 @@
 import pytest
-from hardware_scraper.parsers.category_rules import detect_category, detect_condition, is_refurb_noise
+from hardware_scraper.parsers.category_rules import detect_category, detect_condition, is_accessory_noise, is_refurb_noise
 from hardware_scraper.parsers.title_parser import TitleParser
 
 
@@ -270,3 +270,182 @@ class TestRefurbNoise:
 
     def test_clean_title(self):
         assert not is_refurb_noise("RTX 3080 used great condition")
+
+
+# ---------------------------------------------------------------------------
+# Accessory noise filter
+# ---------------------------------------------------------------------------
+
+class TestAccessoryNoise:
+    # Phone cases
+    def test_iphone_case_dropped(self):
+        assert is_accessory_noise("iPhone 14 Pro Case Black TPU")
+
+    def test_phone_case_dropped(self):
+        assert is_accessory_noise("Phone Case for Samsung Galaxy")
+
+    def test_case_for_iphone_dropped(self):
+        assert is_accessory_noise("Case for iPhone 13 Pro Max Leather")
+
+    def test_wallet_case_dropped(self):
+        assert is_accessory_noise("Wallet Case iPhone 15 Plus")
+
+    def test_galaxy_case_dropped(self):
+        assert is_accessory_noise("Samsung Galaxy S23 Case Clear")
+
+    # Screen protection
+    def test_screen_protector_dropped(self):
+        assert is_accessory_noise("iPhone 15 Screen Protector 3-Pack Tempered")
+
+    def test_tempered_glass_dropped(self):
+        assert is_accessory_noise("Tempered Glass for Samsung Galaxy S22")
+
+    # Phone chargers / accessories
+    def test_phone_charger_dropped(self):
+        assert is_accessory_noise("Phone Charger Fast Charging 65W USB-C")
+
+    def test_iphone_charger_dropped(self):
+        assert is_accessory_noise("iPhone Charger Cable 6ft MFi Certified")
+
+    def test_charger_for_samsung_dropped(self):
+        assert is_accessory_noise("Charger for Samsung Galaxy fast 45W")
+
+    # Smartwatches & earbuds
+    def test_apple_watch_dropped(self):
+        assert is_accessory_noise("Apple Watch Series 9 45mm Midnight")
+
+    def test_airpods_dropped(self):
+        assert is_accessory_noise("AirPods Pro 2nd Generation with case")
+
+    def test_airpod_singular_dropped(self):
+        assert is_accessory_noise("AirPod Pro replacement left ear")
+
+    def test_samsung_buds_dropped(self):
+        assert is_accessory_noise("Samsung Galaxy Buds2 Pro Black")
+
+    # Laptop accessories
+    def test_laptop_bag_dropped(self):
+        assert is_accessory_noise("Laptop Bag 15.6 inch Waterproof Dell")
+
+    def test_laptop_backpack_dropped(self):
+        assert is_accessory_noise("Laptop Backpack 17 inch Gaming")
+
+    def test_macbook_sleeve_dropped(self):
+        assert is_accessory_noise("MacBook Pro sleeve 13 inch neoprene")
+
+    def test_macbook_cover_dropped(self):
+        assert is_accessory_noise("MacBook Air Cover 13 inch hardshell")
+
+    # Console accessories & games
+    def test_dualsense_controller_dropped(self):
+        assert is_accessory_noise("DualSense PS5 Wireless Controller White")
+
+    def test_dualshock_dropped(self):
+        assert is_accessory_noise("DualShock 4 Controller Black PS4")
+
+    def test_ps5_controller_dropped(self):
+        assert is_accessory_noise("PS5 Controller DualSense Midnight Black")
+
+    def test_ps5_game_dropped(self):
+        assert is_accessory_noise("PS5 Games Lot God of War Horizon")
+
+    def test_xbox_controller_dropped(self):
+        assert is_accessory_noise("Xbox Controller Wireless Carbon Black")
+
+    def test_xbox_game_dropped(self):
+        assert is_accessory_noise("Xbox Game Halo Infinite Series X")
+
+    def test_switch_game_dropped(self):
+        assert is_accessory_noise("Switch Game Mario Kart 8 Deluxe")
+
+    def test_controller_for_ps5_dropped(self):
+        assert is_accessory_noise("Controller for PS5 brand new in box")
+
+    # Legitimate listings should NOT be dropped
+    def test_iphone_not_dropped(self):
+        assert not is_accessory_noise("iPhone 14 Pro 256GB Space Black unlocked")
+
+    def test_ps5_console_not_dropped(self):
+        assert not is_accessory_noise("PS5 Digital Edition console bundle")
+
+    def test_xbox_console_not_dropped(self):
+        assert not is_accessory_noise("Xbox Series X 1TB console")
+
+    def test_macbook_not_dropped(self):
+        assert not is_accessory_noise("MacBook Pro 14 M3 Pro 2023 Space Gray")
+
+    def test_laptop_not_dropped(self):
+        assert not is_accessory_noise("Dell Latitude 5480 laptop i7 16GB")
+
+    def test_gpu_not_dropped(self):
+        assert not is_accessory_noise("RTX 3080 10GB EVGA FTW3 gaming card")
+
+    def test_ps5_with_controller_bundle_not_dropped(self):
+        # Bundle listing — the PS5 is the primary item
+        assert not is_accessory_noise("PS5 Disc Edition with extra controller and games")
+
+    # --- New patterns: console games with model number between brand and "game" ---
+    def test_xbox_series_x_game_dropped(self):
+        assert is_accessory_noise("Xbox series x game and controller")
+
+    def test_xbox_series_s_games_dropped(self):
+        assert is_accessory_noise("Xbox Series S games lot Forza Halo")
+
+    def test_ps4_slim_games_dropped(self):
+        assert is_accessory_noise("PS4 Slim games lot 10 titles")
+
+    # --- Console-specific case patterns ---
+    def test_case_for_steam_deck_dropped(self):
+        assert is_accessory_noise("Case for steam deck protective hard shell")
+
+    def test_case_for_ps5_dropped(self):
+        assert is_accessory_noise("Case for PS5 slim travel bag")
+
+    def test_steam_deck_case_dropped(self):
+        assert is_accessory_noise("Steam Deck case EVA hard shell")
+
+    # --- Dock / stand patterns ---
+    def test_steam_deck_dock_dropped(self):
+        assert is_accessory_noise("steam deck dock USB-C hub HDMI")
+
+    def test_switch_dock_dropped(self):
+        assert is_accessory_noise("Nintendo Switch dock official OEM")
+
+    def test_charging_dock_dropped(self):
+        assert is_accessory_noise("Charging Dock for PS5 DualSense controllers")
+
+    # --- Service listings ---
+    def test_ps5_cleaning_dropped(self):
+        assert is_accessory_noise("ps5 cleaning deep clean fan service")
+
+    def test_laptop_cleaning_dropped(self):
+        assert is_accessory_noise("laptop cleaning and thermal paste replacement")
+
+    def test_cleaning_service_dropped(self):
+        assert is_accessory_noise("PC cleaning service dust removal")
+
+    def test_repair_service_dropped(self):
+        assert is_accessory_noise("iPhone repair service screen replacement")
+
+    # --- Storage enclosures ---
+    def test_ssd_case_dropped(self):
+        assert is_accessory_noise("1tb ssd case only for xbox external")
+
+    def test_hdd_case_dropped(self):
+        assert is_accessory_noise("HDD case 2.5 inch USB 3.0 enclosure")
+
+    def test_drive_enclosure_dropped(self):
+        assert is_accessory_noise("Drive enclosure USB-C NVMe aluminum")
+
+    # --- Verify legitimate console/hardware listings are still NOT dropped ---
+    def test_xbox_series_x_console_not_dropped(self):
+        assert not is_accessory_noise("Xbox Series X 1TB console black")
+
+    def test_steam_deck_console_not_dropped(self):
+        assert not is_accessory_noise("Steam Deck 512GB OLED great condition")
+
+    def test_ps5_console_not_dropped_2(self):
+        assert not is_accessory_noise("PS5 Digital Edition barely used")
+
+    def test_ssd_drive_not_dropped(self):
+        assert not is_accessory_noise("Samsung 1TB NVMe SSD 970 EVO Plus")

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from hardware_scraper.config import get_config
 from hardware_scraper.db import make_engine
-from hardware_scraper.models import Listing, ListingProduct, Product, Valuation
+from hardware_scraper.models import EbayComp, Listing, ListingProduct, Product, Valuation
 
 app = FastAPI(title="HardwareScraper", docs_url=None, redoc_url=None)
 
@@ -162,10 +162,47 @@ async def api_scan():
 
         _log("Valuating...")
         await run_valuate(min_confidence=0.5)
+        _log("LLM validating high-margin results...")
+        from hardware_scraper.pipeline.validate import run_llm_validate
+        await run_llm_validate()
         _log("Scan complete.")
 
     asyncio.create_task(_run_job(_task()))
     return JSONResponse({"started": True})
+
+
+@app.post("/api/validate")
+async def api_validate(margin_threshold: float = 300.0):
+    """Run LLM validation on valuations above margin_threshold%."""
+    if _job["running"]:
+        return JSONResponse({"error": "A job is already running"}, status_code=409)
+
+    async def _task():
+        from hardware_scraper.pipeline.validate import run_llm_validate
+        _log(f"LLM validating listings with margin >{margin_threshold:.0f}%...")
+        await run_llm_validate(margin_threshold=margin_threshold)
+        _log("LLM validation complete.")
+
+    asyncio.create_task(_run_job(_task()))
+    return JSONResponse({"started": True})
+
+
+@app.delete("/api/reset")
+def api_reset():
+    """Delete all listings, products, valuations, and eBay comps from the DB."""
+    if _job["running"]:
+        return JSONResponse({"error": "A job is already running"}, status_code=409)
+    cfg = get_config()
+    engine = make_engine(cfg.database.url)
+    with Session(engine) as db:
+        deleted = db.query(Listing).count()
+        db.query(Valuation).delete()
+        db.query(EbayComp).delete()
+        db.query(ListingProduct).delete()
+        db.query(Listing).delete()
+        db.query(Product).delete()
+        db.commit()
+    return JSONResponse({"deleted": deleted})
 
 
 # ---------------------------------------------------------------------------

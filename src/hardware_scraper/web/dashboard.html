@@ -16,8 +16,10 @@
   .btn-scan   { background: #2563eb; color: #fff; }
   .btn-browse { background: #16a34a; color: #fff; }
   .btn-scrape { background: #d97706; color: #fff; }
-  .btn-valuate { background: #7c3aed; color: #fff; }
-  .btn-refresh { background: #374151; color: #e0e0e0; }
+  .btn-valuate  { background: #7c3aed; color: #fff; }
+  .btn-validate { background: #0f766e; color: #fff; }
+  .btn-refresh  { background: #374151; color: #e0e0e0; }
+  .btn-reset    { background: #7f1d1d; color: #fca5a5; }
   .source-select { padding: 8px 12px; background: #1f1f1f; color: #e0e0e0; border: 1px solid #333; border-radius: 6px; font-size: 0.85rem; }
   .status-bar { padding: 8px 24px; background: #111; font-size: 0.78rem; color: #6b7280; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #222; }
   .pulse { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
@@ -75,7 +77,9 @@
   <input type="text" id="query-input" placeholder="keyword (optional)" style="padding:7px 12px;background:#1f1f1f;color:#e0e0e0;border:1px solid #333;border-radius:6px;font-size:0.82rem;width:200px;">
   <button class="btn-scrape" onclick="scrape()">Scrape</button>
   <button class="btn-valuate" onclick="valuate()">Valuate</button>
+  <button class="btn-validate" onclick="validate()" title="LLM-check listings with margin >300% and drop misrepresentations">Validate LLM</button>
   <button class="btn-refresh" onclick="loadResults()">Refresh</button>
+  <button class="btn-reset" onclick="resetDB()" style="margin-left:auto">Reset DB</button>
 </div>
 
 <div class="status-bar">
@@ -113,6 +117,9 @@
       <option value="4">Low (≥0%)</option>
       <option value="5">Overpriced</option>
     </select>
+    <span style="color:#6b7280;font-size:0.8rem;">Price:</span>
+    <input type="number" id="filter-min" placeholder="Min $" oninput="render()" min="0" style="width:80px;padding:7px 10px;background:#1f1f1f;color:#e0e0e0;border:1px solid #333;border-radius:6px;font-size:0.82rem;">
+    <input type="number" id="filter-max" placeholder="Max $" oninput="render()" min="0" style="width:80px;padding:7px 10px;background:#1f1f1f;color:#e0e0e0;border:1px solid #333;border-radius:6px;font-size:0.82rem;">
   </div>
 
   <table id="results-table">
@@ -149,6 +156,15 @@ async function post(url) {
 function source() { return document.getElementById('source-sel').value; }
 function query()  { return document.getElementById('query-input').value.trim(); }
 
+async function resetDB() {
+  const n = _data.length;
+  if (!confirm(`Delete all ${n} listings and start fresh?\n\nThis cannot be undone.`)) return;
+  const r = await fetch('/api/reset', { method: 'DELETE' });
+  const j = await r.json();
+  if (j.error) { alert(j.error); return; }
+  await loadResults();
+}
+
 async function scan()    { await post('/api/scan'); pollStatus(); }
 async function browse()  { await post('/api/browse?source=' + source()); pollStatus(); }
 async function scrape()  {
@@ -156,7 +172,8 @@ async function scrape()  {
   await post('/api/scrape?source=' + source() + (q ? '&query=' + encodeURIComponent(q) : ''));
   pollStatus();
 }
-async function valuate() { await post('/api/valuate'); pollStatus(); }
+async function valuate()  { await post('/api/valuate'); pollStatus(); }
+async function validate() { await post('/api/validate'); pollStatus(); }
 
 async function loadResults() {
   const r = await fetch('/api/results');
@@ -195,13 +212,17 @@ function render() {
   const src  = document.getElementById('filter-src').value;
   const cond = document.getElementById('filter-cond').value;
   const tier = document.getElementById('filter-tier').value;
+  const minP = parseFloat(document.getElementById('filter-min').value);
+  const maxP = parseFloat(document.getElementById('filter-max').value);
 
   let rows = _data.filter(d =>
     (!txt  || d.title.toLowerCase().includes(txt)) &&
     (!cat  || d.category === cat) &&
     (!src  || d.source === src) &&
     (!cond || d.condition === cond) &&
-    (!tier || String(d.margin_tier) === tier)
+    (!tier || String(d.margin_tier) === tier) &&
+    (isNaN(minP) || d.price >= minP) &&
+    (isNaN(maxP) || d.price <= maxP)
   );
 
   rows.sort((a, b) => {

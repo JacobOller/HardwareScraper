@@ -100,6 +100,7 @@ class FacebookConfig:
         latitude: float = 0.0,
         longitude: float = 0.0,
         radius_miles: int = 40,
+        city_marketplace_url: str = "",
     ) -> None:
         self.session_dir = session_dir
         self.enabled = enabled
@@ -107,6 +108,7 @@ class FacebookConfig:
         self.latitude = latitude
         self.longitude = longitude
         self.radius_miles = radius_miles
+        self.city_marketplace_url = city_marketplace_url
 
 
 class AppConfig:
@@ -135,6 +137,7 @@ class AppConfig:
             latitude=float(fb_raw.get("latitude", 0.0)),
             longitude=float(fb_raw.get("longitude", 0.0)),
             radius_miles=int(fb_raw.get("radius_miles", self.scraping.radius_miles)),
+            city_marketplace_url=str(fb_raw.get("city_marketplace_url", "")),
         )
 
 

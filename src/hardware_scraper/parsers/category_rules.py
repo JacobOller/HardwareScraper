@@ -88,6 +88,72 @@ def is_refurb_noise(title: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Accessory noise patterns — drop before category detection
+# Catches accessories misidentified as the parent product
+# (e.g. "iPhone 14 Case" → phone category with $800 eBay comp)
+# ---------------------------------------------------------------------------
+
+_ACCESSORY_NOISE_PATTERNS = [
+    # Phone cases & covers — allow model info between brand and "case"
+    r"\bphone\s+case\b",
+    r"\bphone\s+cover\b",
+    r"\biphone\b.{0,25}\bcase\b",   # "iPhone 14 Pro Case"
+    r"\bcase\s+for\s+(?:iphone|samsung|galaxy|pixel|android|phone)\b",
+    r"\bsamsung\b.{0,25}\bcase\b",  # "Samsung Galaxy S23 Case"
+    r"\bgalaxy\b.{0,25}\bcase\b",   # "Galaxy S23 Ultra Case"
+    r"\bwallet\s+case\b",
+    r"\bfolio\s+case\b",
+    # Screen protection
+    r"\bscreen\s+protector\b",
+    r"\btempered\s+glass\b",
+    # Phone chargers / accessories
+    r"\bphone\s+(?:charger|stand|mount|holder)\b",
+    r"\bcharger\s+for\s+(?:iphone|samsung|galaxy|pixel|phone|android)\b",
+    r"\biphone\s+charger\b",
+    # Smartwatches & wireless earbuds (often trigger phone category)
+    r"\bapple\s+watch\b",
+    r"\bairpods?\b",
+    r"\bsamsung\s+(?:galaxy\s+)?buds\d*\b",  # "Galaxy Buds2 Pro"
+    r"\bpixel\s+buds\b",
+    # Laptop bags / sleeves — allow "Pro/Air" between MacBook and accessory type
+    r"\blaptop\s+(?:bag|backpack|sleeve|case|cover)\b",
+    r"\bmacbook\b.{0,10}\b(?:case|cover|skin|sleeve|bag)\b",  # "MacBook Pro sleeve"
+    # Console controllers & games (not the console itself)
+    r"\bdualsense\b",
+    r"\bdualshock\b",
+    r"\bps[45]\s+controller\b",
+    r"\bps5\s+game[s]?\b",
+    r"\bxbox\s+(?:game[s]?|controller)\b",
+    r"\bxbox\b.{0,25}\bgame[s]?\b",  # "Xbox Series X game" (model between brand and "game")
+    r"\bps[45]\b.{0,20}\bgame[s]?\b",  # "PS4 Slim games lot"
+    r"\bswitch\s+game[s]?\b",
+    r"\bnintendo\s+(?:game[s]?|cartridge)\b",
+    r"\bcontroller\s+for\s+(?:ps[45]|xbox|switch|playstation|nintendo)\b",
+    # Console cases, docks, and stands
+    r"\bcase\s+for\s+(?:steam\s+deck|ps[45]|xbox|switch|playstation|nintendo|console)\b",
+    r"\bsteam\s+deck\s+(?:dock|stand|charger|hub|case|cover|skin|bag)\b",
+    r"\bswitch\s+(?:dock|hub|stand)\b",
+    r"\bcharging\s+(?:dock|station)\b",
+    # Service / cleaning listings
+    r"\b(?:ps[45]|xbox|switch|console|laptop|pc)\s+cleaning\b",
+    r"\bcleaning\s+service\b",
+    r"\brepair\s+service\b",
+    # External drive enclosures (trigger ssd/hdd category but aren't drives)
+    r"\bssd\s+case\b",
+    r"\bhdd\s+case\b",
+    r"\bdrive\s+enclosure\b",
+]
+
+
+def is_accessory_noise(title: str) -> bool:
+    """Return True if the title is an accessory being misidentified as the parent product."""
+    for pattern in _ACCESSORY_NOISE_PATTERNS:
+        if re.search(pattern, title, re.IGNORECASE):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Brand / model regexes — components
 # ---------------------------------------------------------------------------
 

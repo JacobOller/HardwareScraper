@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from hardware_scraper.config import get_config
 from hardware_scraper.db import make_engine
 from hardware_scraper.models import Listing, Product, ListingProduct
-from hardware_scraper.parsers.category_rules import is_refurb_noise
+from hardware_scraper.parsers.category_rules import is_accessory_noise, is_refurb_noise
 from hardware_scraper.parsers.title_parser import ParsedTitle, TitleParser
 from hardware_scraper.scrapers.base import RawListing
 
@@ -87,6 +87,10 @@ def _store_listing(db, raw: RawListing, parser: TitleParser, llm_parser, cfg) ->
     if is_refurb_noise(raw.title):
         return 0, 0, 1
 
+    # Drop accessories misidentified as parent products (phone cases, console games, etc.)
+    if is_accessory_noise(raw.title):
+        return 0, 0, 1
+
     # Drop listings with failed price scraping
     if raw.price is None or raw.price <= 0:
         return 0, 0, 1
@@ -159,6 +163,7 @@ def _make_scraper(cfg, source: str = "offerup"):
             latitude=cfg.facebook.latitude,
             longitude=cfg.facebook.longitude,
             radius_miles=cfg.facebook.radius_miles,
+            city_marketplace_url=cfg.facebook.city_marketplace_url,
         )
 
     from hardware_scraper.scrapers.offerup import OfferUpScraper

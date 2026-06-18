@@ -31,6 +31,15 @@ def valuate(
 
 
 @app.command()
+def validate(
+    margin_threshold: float = typer.Option(300.0, "--margin", help="LLM-check valuations above this margin %"),
+) -> None:
+    """LLM-validate high-margin listings and drop misrepresentations (accessories, services, etc.)."""
+    from hardware_scraper.pipeline.validate import run_llm_validate
+    asyncio.run(run_llm_validate(margin_threshold=margin_threshold))
+
+
+@app.command()
 def report(
     min_margin: Optional[int] = typer.Option(None, "--min-margin", help="Minimum margin % to display"),
     export_csv: bool = typer.Option(False, "--csv", help="Export results to CSV"),
@@ -99,6 +108,10 @@ def scan(
 
         console.print("[cyan]Valuating...[/cyan]")
         await run_valuate(min_confidence=min_confidence)
+
+        console.print("[cyan]LLM validating high-margin results...[/cyan]")
+        from hardware_scraper.pipeline.validate import run_llm_validate
+        await run_llm_validate()
 
     asyncio.run(_run())
     run_report()

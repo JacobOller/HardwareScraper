@@ -52,6 +52,10 @@ facebook:
   latitude: 41.9762            # North Attleborough MA (zip 02766)
   longitude: -71.3326
   radius_miles: 40             # matches scraping.radius_miles
+  # If results show wrong city, paste your FB Marketplace city URL here.
+  # Visit facebook.com/marketplace and click your city; copy the URL (e.g. ".../marketplace/attleboro-ma/").
+  # Leave blank to use lat/lon URL params instead.
+  city_marketplace_url: "https://www.facebook.com/marketplace/105616702804216"
 
 search:
   queries:                    # default search terms; override via CLI --query
@@ -85,6 +89,6 @@ output:
 
 llm:
   enabled: true              # set true to enable Claude Haiku fallback for low-confidence titles
-  api_key: "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"                 # leave blank to use ANTHROPIC_API_KEY env var
+  api_key: ""                 # leave blank to use ANTHROPIC_API_KEY env var
   model: "claude-haiku-4-5"
   confidence_threshold: 0.5   # listings below this score are sent to the LLM

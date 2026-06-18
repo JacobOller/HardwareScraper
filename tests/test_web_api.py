@@ -125,3 +125,34 @@ class TestScanEndpoint:
             r = client.post("/api/scan")
         assert r.status_code == 200
         assert r.json()["started"] is True
+
+
+class TestResetEndpoint:
+    def test_reset_conflicts_when_running(self, client):
+        from hardware_scraper.web import app as web_module
+        web_module._job["running"] = True
+        r = client.delete("/api/reset")
+        assert r.status_code == 409
+        web_module._job["running"] = False
+
+    def test_reset_returns_deleted_count(self, client):
+        from hardware_scraper.web import app as web_module
+        web_module._job["running"] = False
+
+        mock_engine = MagicMock()
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.count.return_value = 42
+        mock_session.query.return_value.delete.return_value = None
+
+        with patch("hardware_scraper.web.app.make_engine", return_value=mock_engine), \
+             patch("hardware_scraper.web.app.Session", return_value=mock_session):
+            r = client.delete("/api/reset")
+
+        assert r.status_code == 200
+        assert "deleted" in r.json()
+
+    def test_reset_button_in_html(self, client):
+        r = client.get("/")
+        assert "Reset DB" in r.text
