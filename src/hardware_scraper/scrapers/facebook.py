@@ -36,6 +36,7 @@ class FacebookMarketplaceScraper(BaseScraper):
         latitude: float = 0.0,
         longitude: float = 0.0,
         radius_miles: int = 40,
+        city_marketplace_url: str = "",
     ) -> None:
         super().__init__(rate_limit_seconds)
         self._session_dir = session_dir
@@ -43,22 +44,36 @@ class FacebookMarketplaceScraper(BaseScraper):
         self._latitude = latitude
         self._longitude = longitude
         self._radius_miles = radius_miles
+        self._city_marketplace_url = city_marketplace_url
 
     def _loc_params(self) -> str:
         """Return location query-string fragment if coordinates are configured."""
         if self._latitude and self._longitude:
-            return f"&latitude={self._latitude}&longitude={self._longitude}&radius={self._radius_miles}"
+            return (
+                f"&latitude={self._latitude}&longitude={self._longitude}"
+                f"&radius={self._radius_miles}&radiusUnit=mi"
+            )
         return ""
 
     async def search(self, query: str, limit: int = 50) -> AsyncIterator[RawListing]:
         q = query.replace(" ", "+")
-        url = f"{_SEARCH_BASE}?query={q}&exact=false{self._loc_params()}"
+        if self._city_marketplace_url:
+            # Anchor keyword search to the configured city — lat/lon params are ignored by FB.
+            # URL format: facebook.com/marketplace/{city_id_or_slug}/search/?query=...
+            base = self._city_marketplace_url.rstrip("/")
+            url = f"{base}/search/?query={q}&exact=false"
+        else:
+            url = f"{_SEARCH_BASE}?query={q}&exact=false{self._loc_params()}"
         async for listing in self._scrape(url, limit):
             yield listing
 
     async def browse(self, limit: int = 100) -> AsyncIterator[RawListing]:
-        # Browse uses an empty query so we get all local listings
-        url = f"{_SEARCH_BASE}?query=&exact=false{self._loc_params()}"
+        # If a city-specific URL is configured, use it — it locks to the correct geographic area
+        # regardless of the session's stored account location (URL params are often ignored by FB).
+        if self._city_marketplace_url:
+            url = self._city_marketplace_url
+        else:
+            url = f"{_SEARCH_BASE}?query=&exact=false{self._loc_params()}"
         async for listing in self._scrape(url, limit):
             yield listing
 
