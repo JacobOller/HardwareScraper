@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncIterator, Optional
 
@@ -20,6 +21,9 @@ class OfferUpScraper(BaseScraper):
 
     OfferUp renders listings as JSON embedded in a __NEXT_DATA__ script tag,
     which is faster than DOM scraping and survives minor layout changes.
+
+    Use session() to hold the browser open across multiple search() calls
+    (avoids re-launching for every query in a scan).
     """
 
     def __init__(
@@ -36,76 +40,75 @@ class OfferUpScraper(BaseScraper):
         self._radius = radius_miles
         self._headless = headless
 
-    async def search(self, query: str, limit: int = 50) -> AsyncIterator[RawListing]:
+    @asynccontextmanager
+    async def session(self):
+        """Hold one browser open for the duration. Reused across search()/browse() calls."""
         from playwright.async_api import async_playwright
+        async with async_playwright() as pw:
+            self._browser = await pw.chromium.launch_persistent_context(
+                user_data_dir=self._session_dir,
+                headless=self._headless,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            try:
+                yield self
+            finally:
+                await self._browser.close()
+                self._browser = None
 
+    async def search(self, query: str, limit: int = 50) -> AsyncIterator[RawListing]:
         url = _OFFERUP_SEARCH_URL.format(
             query=query.replace(" ", "+"),
             radius=self._radius,
             zip=self._zip,
         )
-
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch_persistent_context(
-                user_data_dir=self._session_dir,
-                headless=self._headless,
-                args=["--disable-blink-features=AutomationControlled"],
-            )
-            page = browser.pages[0] if browser.pages else await browser.new_page()
-
-            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-            await self._sleep()
-
-            count = 0
-            while count < limit:
-                listings = await self._extract_listings(page)
-                for listing in listings:
-                    if count >= limit:
-                        break
-                    yield listing
-                    count += 1
-
-                if count >= limit or not await self._has_next_page(page):
-                    break
-
-                await self._click_next_page(page)
-                await self._sleep()
-
-            await browser.close()
+        async for listing in self._scrape(url, limit):
+            yield listing
 
     async def browse(self, limit: int = 100) -> AsyncIterator[RawListing]:
-        """Fetch all local listings using an empty-query search (no keyword needed)."""
-        from playwright.async_api import async_playwright
-
         url = _OFFERUP_BROWSE_URL.format(radius=self._radius, zip=self._zip)
+        async for listing in self._scrape(url, limit):
+            yield listing
 
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch_persistent_context(
-                user_data_dir=self._session_dir,
-                headless=self._headless,
-                args=["--disable-blink-features=AutomationControlled"],
-            )
-            page = browser.pages[0] if browser.pages else await browser.new_page()
+    async def _scrape(self, url: str, limit: int) -> AsyncIterator[RawListing]:
+        """Route to session-reuse path or standalone launch based on self._browser."""
+        if self._browser:
+            page = self._browser.pages[0] if self._browser.pages else await self._browser.new_page()
+            async for listing in self._scrape_page(page, url, limit):
+                yield listing
+        else:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch_persistent_context(
+                    user_data_dir=self._session_dir,
+                    headless=self._headless,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+                page = browser.pages[0] if browser.pages else await browser.new_page()
+                try:
+                    async for listing in self._scrape_page(page, url, limit):
+                        yield listing
+                finally:
+                    await browser.close()
 
-            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-            await self._sleep()
+    async def _scrape_page(self, page, url: str, limit: int) -> AsyncIterator[RawListing]:
+        await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+        await self._sleep()
 
-            count = 0
-            while count < limit:
-                listings = await self._extract_listings(page)
-                for listing in listings:
-                    if count >= limit:
-                        break
-                    yield listing
-                    count += 1
-
-                if count >= limit or not await self._has_next_page(page):
+        count = 0
+        while count < limit:
+            listings = await self._extract_listings(page)
+            for listing in listings:
+                if count >= limit:
                     break
+                yield listing
+                count += 1
 
-                await self._click_next_page(page)
-                await self._sleep()
+            if count >= limit or not await self._has_next_page(page):
+                break
 
-            await browser.close()
+            await self._click_next_page(page)
+            await self._sleep()
 
     async def _extract_listings(self, page) -> list[RawListing]:
         raw_json = await page.evaluate("""

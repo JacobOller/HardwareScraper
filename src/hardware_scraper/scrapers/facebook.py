@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncIterator, Optional
 
@@ -15,6 +16,16 @@ _ITEM_ID_RE = re.compile(r"/marketplace/item/(\d+)")
 # Price: "$150", "$1,200"
 _PRICE_RE = re.compile(r"\$([\d,]+)")
 
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+_LAUNCH_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    "--no-sandbox",
+]
+
 
 class FacebookMarketplaceScraper(BaseScraper):
     """
@@ -26,6 +37,8 @@ class FacebookMarketplaceScraper(BaseScraper):
 
     First-time setup: run with headless=False so you can log in manually.
     The session cookie is then persisted and subsequent runs work headlessly.
+
+    Use session() to hold the browser open across multiple search()/browse() calls.
     """
 
     def __init__(
@@ -55,6 +68,23 @@ class FacebookMarketplaceScraper(BaseScraper):
             )
         return ""
 
+    @asynccontextmanager
+    async def session(self):
+        """Hold one browser open for the duration. Reused across search()/browse() calls."""
+        from playwright.async_api import async_playwright
+        async with async_playwright() as pw:
+            self._browser = await pw.chromium.launch_persistent_context(
+                user_data_dir=self._session_dir,
+                headless=self._headless,
+                args=_LAUNCH_ARGS,
+                user_agent=_USER_AGENT,
+            )
+            try:
+                yield self
+            finally:
+                await self._browser.close()
+                self._browser = None
+
     async def search(self, query: str, limit: int = 50) -> AsyncIterator[RawListing]:
         q = query.replace(" ", "+")
         if self._city_marketplace_url:
@@ -78,59 +108,60 @@ class FacebookMarketplaceScraper(BaseScraper):
             yield listing
 
     async def _scrape(self, url: str, limit: int) -> AsyncIterator[RawListing]:
-        from playwright.async_api import async_playwright
+        """Route to session-reuse path or standalone launch based on self._browser."""
+        if self._browser:
+            page = self._browser.pages[0] if self._browser.pages else await self._browser.new_page()
+            async for listing in self._scrape_page(page, url, limit):
+                yield listing
+        else:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch_persistent_context(
+                    user_data_dir=self._session_dir,
+                    headless=self._headless,
+                    args=_LAUNCH_ARGS,
+                    user_agent=_USER_AGENT,
+                )
+                page = browser.pages[0] if browser.pages else await browser.new_page()
+                try:
+                    async for listing in self._scrape_page(page, url, limit):
+                        yield listing
+                finally:
+                    await browser.close()
 
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch_persistent_context(
-                user_data_dir=self._session_dir,
-                headless=self._headless,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                ],
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-            )
-            page = browser.pages[0] if browser.pages else await browser.new_page()
+    async def _scrape_page(self, page, url: str, limit: int) -> AsyncIterator[RawListing]:
+        await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+        await self._sleep()
 
-            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-            await self._sleep()
+        seen_ids: set[str] = set()
+        count = 0
+        scroll_rounds = 0
+        # ~6-8 items load per scroll; add extra rounds as buffer
+        max_scrolls = max(8, (limit // 6) + 4)
 
-            seen_ids: set[str] = set()
-            count = 0
-            scroll_rounds = 0
-            # ~6-8 items load per scroll; add extra rounds as buffer
-            max_scrolls = max(8, (limit // 6) + 4)
-
-            while count < limit and scroll_rounds < max_scrolls:
-                listings = await self._extract_listings(page)
-                for raw in listings:
-                    if raw.external_id in seen_ids:
-                        continue
-                    seen_ids.add(raw.external_id)
-                    yield raw
-                    count += 1
-                    if count >= limit:
-                        break
-
+        while count < limit and scroll_rounds < max_scrolls:
+            listings = await self._extract_listings(page)
+            for raw in listings:
+                if raw.external_id in seen_ids:
+                    continue
+                seen_ids.add(raw.external_id)
+                yield raw
+                count += 1
                 if count >= limit:
                     break
 
-                prev_count = len(seen_ids)
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await self._sleep()
-                scroll_rounds += 1
+            if count >= limit:
+                break
 
-                # Stop early if no new items appeared after scrolling
-                new_after_scroll = await self._extract_listings(page)
-                new_ids = {r.external_id for r in new_after_scroll} - seen_ids
-                if not new_ids and scroll_rounds > 3:
-                    break
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await self._sleep()
+            scroll_rounds += 1
 
-            await browser.close()
+            # Stop early if no new items appeared after scrolling
+            new_after_scroll = await self._extract_listings(page)
+            new_ids = {r.external_id for r in new_after_scroll} - seen_ids
+            if not new_ids and scroll_rounds > 3:
+                break
 
     async def _extract_listings(self, page) -> list[RawListing]:
         # Primary: scan embedded Relay JSON blobs in <script> tags

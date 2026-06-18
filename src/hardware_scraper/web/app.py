@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
@@ -73,6 +73,7 @@ def api_results():
                 "margin_label": val.margin_label,
                 "url": listing.url,
                 "comp_count": val.ebay_comp_count,
+                "saved": listing.saved,
             }
             for listing, val, lp, product in rows
         ])
@@ -140,31 +141,49 @@ async def api_scan():
         return JSONResponse({"error": "A job is already running"}, status_code=409)
 
     async def _task():
-        from hardware_scraper.pipeline.ingest import run_browse, run_ingest
+        from hardware_scraper.pipeline.ingest import run_browse, run_ingest, _make_scraper
         from hardware_scraper.pipeline.valuate import run_valuate
 
         cfg = get_config()
 
-        for source in ["offerup", "facebook"]:
-            _log(f"Browsing {source}...")
-            try:
-                await run_browse(source=source)
-            except Exception as exc:
-                _log(f"Browse {source} error: {exc}")
+        browse_and_search = ["offerup", "facebook"]
+        if cfg.craigslist.enabled:
+            browse_and_search.append("craigslist")
+        if cfg.ebay_local.enabled:
+            browse_and_search.append("ebay_local")
 
-        for q in cfg.search.queries:
-            for source in ["offerup", "facebook"]:
-                _log(f"Scraping {source}: {q!r}...")
+        search_only = ["mercari"] if cfg.mercari.enabled else []
+        all_search_sources = browse_and_search + search_only
+
+        async def _browse_one(source: str) -> None:
+            scraper = _make_scraper(cfg, source)
+            async with scraper.session():
+                _log(f"Browsing {source}...")
                 try:
-                    await run_ingest(query=q, source=source)
+                    await run_browse(source=source, scraper=scraper)
                 except Exception as exc:
-                    _log(f"Scrape {source} {q!r} error: {exc}")
+                    _log(f"Browse {source} error: {exc}")
+
+        async def _scrape_all_queries(source: str) -> None:
+            scraper = _make_scraper(cfg, source)
+            async with scraper.session():
+                for q in cfg.search.queries:
+                    _log(f"Scraping {source}: {q!r}...")
+                    try:
+                        await run_ingest(query=q, source=source, scraper=scraper)
+                    except Exception as exc:
+                        _log(f"Scrape {source} {q!r} error: {exc}")
+
+        # Browse all sources in parallel
+        await asyncio.gather(*[_browse_one(s) for s in browse_and_search])
+
+        # Search all sources in parallel; each source runs its queries with one browser
+        await asyncio.gather(*[_scrape_all_queries(s) for s in all_search_sources])
 
         _log("Valuating...")
         await run_valuate(min_confidence=0.5)
-        _log("LLM validating high-margin results...")
         from hardware_scraper.pipeline.validate import run_llm_validate
-        await run_llm_validate()
+        await run_llm_validate(log_fn=_log)
         _log("Scan complete.")
 
     asyncio.create_task(_run_job(_task()))
@@ -172,19 +191,31 @@ async def api_scan():
 
 
 @app.post("/api/validate")
-async def api_validate(margin_threshold: float = 300.0):
-    """Run LLM validation on valuations above margin_threshold%."""
+async def api_validate(margin_threshold: Optional[float] = None):
+    """Run LLM validation on valuations above margin_threshold% (default: config value)."""
     if _job["running"]:
         return JSONResponse({"error": "A job is already running"}, status_code=409)
 
     async def _task():
         from hardware_scraper.pipeline.validate import run_llm_validate
-        _log(f"LLM validating listings with margin >{margin_threshold:.0f}%...")
-        await run_llm_validate(margin_threshold=margin_threshold)
+        await run_llm_validate(margin_threshold=margin_threshold, log_fn=_log)
         _log("LLM validation complete.")
 
     asyncio.create_task(_run_job(_task()))
     return JSONResponse({"started": True})
+
+
+@app.post("/api/listings/{listing_id}/save")
+def api_save_listing(listing_id: int):
+    cfg = get_config()
+    engine = make_engine(cfg.database.url)
+    with Session(engine) as db:
+        listing = db.get(Listing, listing_id)
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        listing.saved = not listing.saved
+        db.commit()
+        return JSONResponse({"id": listing_id, "saved": listing.saved})
 
 
 @app.delete("/api/reset")

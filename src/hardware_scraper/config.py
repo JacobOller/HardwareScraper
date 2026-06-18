@@ -1,20 +1,37 @@
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+load_dotenv()
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "config.yaml"
+_ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
+
+
+def _expand_env_vars(obj):
+    """Recursively replace ${VAR_NAME} in string values with the env var value."""
+    if isinstance(obj, str):
+        return _ENV_VAR_RE.sub(lambda m: os.environ.get(m.group(1), ""), obj)
+    if isinstance(obj, dict):
+        return {k: _expand_env_vars(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_expand_env_vars(item) for item in obj]
+    return obj
 
 
 def _load_yaml() -> dict:
     if _CONFIG_PATH.exists():
         with open(_CONFIG_PATH) as f:
-            return yaml.safe_load(f) or {}
+            raw = yaml.safe_load(f) or {}
+        return _expand_env_vars(raw)
     return {}
 
 
@@ -30,8 +47,8 @@ class EbayConfig(BaseSettings):
 
 class FeesConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
-    ebay_rate: float = 0.1325
-    ebay_fixed: float = 0.30
+    amazon_referral_rate: float = 0.08
+    amazon_per_item_fee: float = 0.99
     outbound_shipping: float = 15.00
 
 
@@ -89,6 +106,7 @@ class LLMConfig(BaseSettings):
     api_key: str = ""
     model: str = "claude-haiku-4-5"
     confidence_threshold: float = 0.5
+    validate_margin_threshold: float = 60.0
 
 
 class FacebookConfig:
@@ -109,6 +127,22 @@ class FacebookConfig:
         self.longitude = longitude
         self.radius_miles = radius_miles
         self.city_marketplace_url = city_marketplace_url
+
+
+class CraigslistConfig:
+    def __init__(self, enabled: bool = True, subdomain: str = "boston") -> None:
+        self.enabled = enabled
+        self.subdomain = subdomain
+
+
+class MercariConfig:
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
+
+
+class EbayLocalConfig:
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
 
 
 class AppConfig:
@@ -138,6 +172,20 @@ class AppConfig:
             longitude=float(fb_raw.get("longitude", 0.0)),
             radius_miles=int(fb_raw.get("radius_miles", self.scraping.radius_miles)),
             city_marketplace_url=str(fb_raw.get("city_marketplace_url", "")),
+        )
+
+        cl_raw = raw.get("craigslist", {})
+        self.craigslist = CraigslistConfig(
+            enabled=bool(cl_raw.get("enabled", True)),
+            subdomain=str(cl_raw.get("subdomain", "boston")),
+        )
+
+        self.mercari = MercariConfig(
+            enabled=bool(raw.get("mercari", {}).get("enabled", True))
+        )
+
+        self.ebay_local = EbayLocalConfig(
+            enabled=bool(raw.get("ebay_local", {}).get("enabled", True))
         )
 
 

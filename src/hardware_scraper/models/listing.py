@@ -21,3 +21,4 @@ class Listing(Base):
     posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     scraped_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     status: Mapped[str] = mapped_column(String(32), default="new")  # new, identified, valuated, skipped
+    saved: Mapped[bool] = mapped_column(default=False)

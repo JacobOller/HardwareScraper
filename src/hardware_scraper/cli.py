@@ -32,7 +32,7 @@ def valuate(
 
 @app.command()
 def validate(
-    margin_threshold: float = typer.Option(300.0, "--margin", help="LLM-check valuations above this margin %"),
+    margin_threshold: Optional[float] = typer.Option(None, "--margin", help="LLM-check valuations above this margin % (default: llm.validate_margin_threshold in config)"),
 ) -> None:
     """LLM-validate high-margin listings and drop misrepresentations (accessories, services, etc.)."""
     from hardware_scraper.pipeline.validate import run_llm_validate
@@ -78,33 +78,91 @@ def fb_scrape(
     asyncio.run(run_ingest(query=query, source="facebook", limit=limit))
 
 
+@app.command(name="cl-scrape")
+def cl_scrape(
+    query: Optional[str] = typer.Option(None, "--query", "-q", help="Search query"),
+    limit: int = typer.Option(50, "--limit", "-n", help="Max listings to fetch"),
+) -> None:
+    """Search Craigslist by keyword."""
+    from hardware_scraper.pipeline.ingest import run_ingest
+    asyncio.run(run_ingest(query=query, source="craigslist", limit=limit))
+
+
+@app.command(name="cl-browse")
+def cl_browse(
+    limit: int = typer.Option(100, "--limit", "-n", help="Max listings to fetch"),
+) -> None:
+    """Browse Craigslist electronics category (no keyword)."""
+    from hardware_scraper.pipeline.ingest import run_browse
+    asyncio.run(run_browse(limit=limit, source="craigslist"))
+
+
+@app.command(name="ebay-local-scrape")
+def ebay_local_scrape(
+    query: Optional[str] = typer.Option(None, "--query", "-q", help="Search query"),
+    limit: int = typer.Option(50, "--limit", "-n", help="Max listings to fetch"),
+) -> None:
+    """Search eBay local pickup listings by keyword."""
+    from hardware_scraper.pipeline.ingest import run_ingest
+    asyncio.run(run_ingest(query=query, source="ebay_local", limit=limit))
+
+
+@app.command(name="mercari-scrape")
+def mercari_scrape(
+    query: Optional[str] = typer.Option(None, "--query", "-q", help="Search query"),
+    limit: int = typer.Option(50, "--limit", "-n", help="Max listings to fetch"),
+) -> None:
+    """Search Mercari by keyword."""
+    from hardware_scraper.pipeline.ingest import run_ingest
+    asyncio.run(run_ingest(query=query, source="mercari", limit=limit))
+
+
 @app.command()
 def scan(
     min_confidence: float = typer.Option(0.5, "--min-confidence", help="Min confidence for valuation"),
 ) -> None:
-    """Full pipeline: browse + scrape all configured queries on all sources + valuate + report."""
+    """Full pipeline: browse + scrape all configured queries on all enabled sources + valuate + report."""
     from hardware_scraper.config import get_config
-    from hardware_scraper.pipeline.ingest import run_browse, run_ingest
+    from hardware_scraper.pipeline.ingest import run_browse, run_ingest, _make_scraper
     from hardware_scraper.pipeline.valuate import run_valuate
     from hardware_scraper.output.reporter import run_report
 
     cfg = get_config()
 
-    async def _run():
-        for source in ["offerup", "facebook"]:
+    browse_and_search = ["offerup", "facebook"]
+    if cfg.craigslist.enabled:
+        browse_and_search.append("craigslist")
+    if cfg.ebay_local.enabled:
+        browse_and_search.append("ebay_local")
+
+    search_only = ["mercari"] if cfg.mercari.enabled else []
+    all_search_sources = browse_and_search + search_only
+
+    async def _browse_one(source: str) -> None:
+        scraper = _make_scraper(cfg, source)
+        async with scraper.session():
             console.print(f"[cyan]Browsing {source}...[/cyan]")
             try:
-                await run_browse(source=source)
+                await run_browse(source=source, scraper=scraper)
             except Exception as exc:
                 console.print(f"[red]Browse {source} error: {exc}[/red]")
 
-        for q in cfg.search.queries:
-            for source in ["offerup", "facebook"]:
+    async def _scrape_all_queries(source: str) -> None:
+        scraper = _make_scraper(cfg, source)
+        async with scraper.session():
+            for q in cfg.search.queries:
                 console.print(f"[cyan]Scraping {source}: {q!r}...[/cyan]")
                 try:
-                    await run_ingest(query=q, source=source)
+                    await run_ingest(query=q, source=source, scraper=scraper)
                 except Exception as exc:
                     console.print(f"[red]Scrape {source} {q!r} error: {exc}[/red]")
+
+    async def _run():
+        # Browse all sources in parallel
+        await asyncio.gather(*[_browse_one(s) for s in browse_and_search])
+
+        # Search all sources in parallel; each source runs its 34 queries with one browser
+        await asyncio.gather(*[_scrape_all_queries(s) for s in all_search_sources])
 
         console.print("[cyan]Valuating...[/cyan]")
         await run_valuate(min_confidence=min_confidence)

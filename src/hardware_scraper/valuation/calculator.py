@@ -26,10 +26,11 @@ class ValuationCalculator:
     """
     Computes profit margin from asking price and eBay comp data.
 
-    Formula:
-        net_resale  = median_ebay_sold - (median_ebay_sold * ebay_rate + ebay_fixed) - outbound_shipping
-        profit      = net_resale - asking_price
-        margin_pct  = (profit / asking_price) * 100
+    eBay sold listings are used for price discovery only. Fees are Amazon FBM (individual seller):
+        estimated_fees = median_ebay_sold * amazon_referral_rate + amazon_per_item_fee
+        net_resale     = median_ebay_sold - estimated_fees - outbound_shipping
+        profit         = net_resale - asking_price
+        margin_pct     = (profit / asking_price) * 100
 
     Outbound shipping is looked up per product category from config.shipping.by_category.
     """
@@ -46,7 +47,7 @@ class ValuationCalculator:
     ) -> ValuationResult:
         fees = self._cfg.fees
         shipping = self._cfg.shipping.for_category(category)
-        estimated_fees = ebay_median * fees.ebay_rate + fees.ebay_fixed
+        estimated_fees = ebay_median * fees.amazon_referral_rate + fees.amazon_per_item_fee
         net_resale = ebay_median - estimated_fees - shipping
         profit = net_resale - asking_price
         margin_pct = (profit / asking_price * 100) if asking_price > 0 else 0.0

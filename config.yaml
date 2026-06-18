@@ -10,8 +10,8 @@ ebay:
   max_comps_per_query: 50     # max sold listings to fetch per eBay search
 
 fees:
-  ebay_rate: 0.1325           # 13.25% final value fee
-  ebay_fixed: 0.30            # $0.30 per order
+  amazon_referral_rate: 0.08  # Amazon referral fee for electronics (individual/professional seller)
+  amazon_per_item_fee: 0.99   # Amazon individual seller per-item closing fee
   outbound_shipping: 15.00    # fallback shipping (superseded by shipping.by_category)
 
 shipping:
@@ -59,26 +59,55 @@ facebook:
 
 search:
   queries:                    # default search terms; override via CLI --query
+    # GPUs
     - "RTX 3070"
     - "RTX 3080"
     - "RTX 3090"
+    - "RTX 2060"
+    - "RTX 2070"
+    - "RTX 2080"
     - "RX 6800"
+    - "RX 6700 XT"
+    - "RX 5700 XT"
+    # CPUs
     - "i7-12700"
     - "i9-12900"
+    - "i5-12600K"
     - "Ryzen 7 5800X"
     - "Ryzen 9 5900X"
+    - "Ryzen 5 5600X"
+    # Consoles
     - "PS5"
     - "Xbox Series X"
     - "Nintendo Switch"
+    - "Nintendo Switch OLED"
     - "Steam Deck"
-    - "broken laptop"
-    - "broken ps5"
-    - "broken xbox"
-    - "gpu not working"
-    - "for parts desktop"
-    - "cracked screen iphone"
+    - "broken PS4"
+    - "broken PS5"
+    - "broken Xbox"
+    # Phones
     - "iPhone 14"
     - "iPhone 15"
+    - "Samsung Galaxy S22"
+    - "Samsung Galaxy S23"
+    - "cracked screen iPhone"
+    - "broken iPhone"
+    # For-parts / broken
+    - "broken laptop"
+    - "broken MacBook"
+    - "broken laptop not turning on"
+    - "gpu not working"
+    - "for parts desktop"
+
+craigslist:
+  enabled: true
+  subdomain: "boston"        # CL metro subdomain closest to you (boston, providence, etc.)
+
+mercari:
+  enabled: true              # Nationwide; factor in ~$10-20 inbound shipping cost per buy
+
+ebay_local:
+  enabled: true              # eBay listings with local pickup only, filtered by ZIP + radius
 
 database:
   url: "sqlite:///data/hardware_scraper.db"
@@ -89,6 +118,7 @@ output:
 
 llm:
   enabled: true              # set true to enable Claude Haiku fallback for low-confidence titles
-  api_key: ""                 # leave blank to use ANTHROPIC_API_KEY env var
+  api_key: ${ANTHROPIC_API_KEY}                 # leave blank to use ANTHROPIC_API_KEY env var
   model: "claude-haiku-4-5"
   confidence_threshold: 0.5   # listings below this score are sent to the LLM
+  validate_margin_threshold: 60  # LLM-confirm all valuations with margin above this %

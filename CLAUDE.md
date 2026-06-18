@@ -92,13 +92,15 @@ HardwareScraper/
 
 ## Margin Formula
 
+eBay sold listings are used for **price discovery only**. Fees reflect **Amazon FBM (individual seller)** since that is the resale platform.
+
 ```
-net_resale  = median_ebay_sold_price - (median_ebay * 0.1325 + 0.30) - outbound_shipping
+net_resale  = median_ebay_sold_price - (median_ebay * 0.08 + 0.99) - outbound_shipping
 profit      = net_resale - asking_price
 margin_pct  = (profit / asking_price) * 100
 ```
 
-Outbound shipping is per-category from `config.yaml` `shipping.by_category` (e.g. cpu $8, desktop $40). Falls back to `shipping.default` ($15) if category not in the table.
+Fee breakdown: `0.08` = Amazon 8% electronics referral rate, `0.99` = individual seller per-item fee. Outbound shipping is per-category from `config.yaml` `shipping.by_category` (e.g. cpu $8, desktop $40). Falls back to `shipping.default` ($15) if category not in the table.
 
 ## Margin Tiers
 

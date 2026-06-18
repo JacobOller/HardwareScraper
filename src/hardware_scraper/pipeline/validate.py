@@ -7,6 +7,7 @@ was identified as, or something else (accessory, game, service, bundle without t
 from __future__ import annotations
 
 import os
+from typing import Callable, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -31,23 +32,34 @@ cleaning/repair service, or any non-device item.
 Reply with only KEEP or DROP."""
 
 
-async def run_llm_validate(margin_threshold: float = 300.0) -> None:
+async def run_llm_validate(
+    margin_threshold: Optional[float] = None,
+    log_fn: Optional[Callable[[str], None]] = None,
+) -> None:
+    def _log(msg: str) -> None:
+        print(msg)
+        if log_fn:
+            log_fn(msg)
+
     cfg = get_config()
+    if margin_threshold is None:
+        margin_threshold = cfg.llm.validate_margin_threshold
     if not cfg.llm.enabled:
+        _log("LLM validation skipped: llm.enabled is false in config")
         return
 
     api_key = cfg.llm.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
+        _log("LLM validation skipped: no API key (set llm.api_key in config.yaml or ANTHROPIC_API_KEY env var)")
         return
 
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.AsyncAnthropic(api_key=api_key)
     except ImportError:
+        _log("LLM validation skipped: anthropic package not installed")
         return
 
-    from rich.console import Console
-    console = Console()
     engine = make_engine(cfg.database.url)
 
     with Session(engine) as db:
@@ -61,11 +73,10 @@ async def run_llm_validate(margin_threshold: float = 300.0) -> None:
         ).all()
 
         if not rows:
+            _log(f"LLM validation: no listings found with margin >{margin_threshold:.0f}%")
             return
 
-        console.print(
-            f"[cyan]LLM validating {len(rows)} listings with margin >{margin_threshold:.0f}%...[/cyan]"
-        )
+        _log(f"LLM validating {len(rows)} listings with margin >{margin_threshold:.0f}%...")
         dropped = 0
 
         for listing, val, lp, product in rows:
@@ -75,26 +86,22 @@ async def run_llm_validate(margin_threshold: float = 300.0) -> None:
                 description=(listing.description or "").strip()[:500] or "No description",
             )
             try:
-                response = client.messages.create(
+                response = await client.messages.create(
                     model=cfg.llm.model,
                     max_tokens=10,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 answer = response.content[0].text.strip().upper()
                 if answer.startswith("DROP"):
-                    console.print(
-                        f"  [red]DROP[/red] ({val.margin_pct:.0f}%) {listing.title[:60]}"
-                    )
+                    _log(f"DROP ({val.margin_pct:.0f}%) {listing.title[:60]}")
                     db.delete(val)
                     listing.status = "noise"
                     dropped += 1
                 else:
-                    console.print(
-                        f"  [green]KEEP[/green] ({val.margin_pct:.0f}%) {listing.title[:60]}"
-                    )
+                    _log(f"KEEP ({val.margin_pct:.0f}%) {listing.title[:60]}")
             except Exception as exc:
-                console.print(f"  [yellow]LLM error for listing {listing.id}: {exc}[/yellow]")
+                _log(f"LLM error for listing {listing.id}: {exc}")
 
         db.commit()
 
-    console.print(f"[green]LLM validation done. Dropped: {dropped} / {len(rows)} checked.[/green]")
+    _log(f"LLM validation done. Dropped {dropped} / {len(rows)} checked.")

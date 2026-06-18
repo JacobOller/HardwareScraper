@@ -4,6 +4,7 @@ import json
 from typing import AsyncIterator, Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from hardware_scraper.config import get_config
@@ -18,6 +19,7 @@ async def run_ingest(
     query: Optional[str] = None,
     source: str = "offerup",
     limit: int = 50,
+    scraper=None,
 ) -> None:
     from rich.console import Console
 
@@ -32,7 +34,8 @@ async def run_ingest(
         console.print("[red]No search queries configured. Set search.queries in config.yaml or pass --query.[/red]")
         return
 
-    scraper = _make_scraper(cfg, source)
+    if scraper is None:
+        scraper = _make_scraper(cfg, source)
     new_count = 0
     skip_count = 0
     noise_count = 0
@@ -45,15 +48,15 @@ async def run_ingest(
                 new_count += stored
                 skip_count += skipped
                 noise_count += noise
-
-        db.commit()
+                if stored:
+                    db.commit()  # commit per listing so parallel sources don't contend on DB lock
 
     console.print(
         f"[green]Done. New: {new_count} | Skipped (duplicate): {skip_count} | Filtered (noise): {noise_count}[/green]"
     )
 
 
-async def run_browse(limit: int = 100, source: str = "offerup") -> None:
+async def run_browse(limit: int = 100, source: str = "offerup", scraper=None) -> None:
     from rich.console import Console
 
     cfg = get_config()
@@ -62,7 +65,8 @@ async def run_browse(limit: int = 100, source: str = "offerup") -> None:
     parser = TitleParser()
     llm_parser = _make_llm_parser(cfg, console)
 
-    scraper = _make_scraper(cfg, source)
+    if scraper is None:
+        scraper = _make_scraper(cfg, source)
     new_count = 0
     skip_count = 0
     noise_count = 0
@@ -74,8 +78,8 @@ async def run_browse(limit: int = 100, source: str = "offerup") -> None:
             new_count += stored
             skip_count += skipped
             noise_count += noise
-
-        db.commit()
+            if stored:
+                db.commit()  # commit per listing so parallel sources don't contend on DB lock
 
     console.print(
         f"[green]Done. New: {new_count} | Skipped (duplicate): {skip_count} | Filtered (noise): {noise_count}[/green]"
@@ -131,15 +135,22 @@ def _store_listing(db, raw: RawListing, parser: TitleParser, llm_parser, cfg) ->
         ).scalar_one_or_none()
 
         if not product:
-            product = Product(
-                category=parsed.category or "unknown",
-                brand=parsed.brand,
-                model=parsed.model,
-                canonical_name=parsed.canonical_name,
-                specs=parsed.specs,
-            )
-            db.add(product)
-            db.flush()
+            try:
+                with db.begin_nested():
+                    product = Product(
+                        category=parsed.category or "unknown",
+                        brand=parsed.brand,
+                        model=parsed.model,
+                        canonical_name=parsed.canonical_name,
+                        specs=parsed.specs,
+                    )
+                    db.add(product)
+                    db.flush()
+            except IntegrityError:
+                # Another parallel source inserted this product first; re-query.
+                product = db.execute(
+                    select(Product).where(Product.canonical_name == parsed.canonical_name)
+                ).scalar_one()
 
         link = ListingProduct(
             listing_id=listing.id,
@@ -164,6 +175,31 @@ def _make_scraper(cfg, source: str = "offerup"):
             longitude=cfg.facebook.longitude,
             radius_miles=cfg.facebook.radius_miles,
             city_marketplace_url=cfg.facebook.city_marketplace_url,
+        )
+
+    if source == "craigslist":
+        from hardware_scraper.scrapers.craigslist import CraigslistScraper
+        return CraigslistScraper(
+            subdomain=cfg.craigslist.subdomain,
+            zip_code=cfg.scraping.location_zip,
+            radius_miles=cfg.scraping.radius_miles,
+            rate_limit_seconds=cfg.scraping.rate_limit_seconds,
+        )
+
+    if source == "ebay_local":
+        from hardware_scraper.scrapers.ebay_local import EbayLocalScraper
+        return EbayLocalScraper(
+            zip_code=cfg.scraping.location_zip,
+            radius_miles=cfg.scraping.radius_miles,
+            rate_limit_seconds=cfg.scraping.rate_limit_seconds,
+            headless=cfg.scraping.headless,
+        )
+
+    if source == "mercari":
+        from hardware_scraper.scrapers.mercari import MercariScraper
+        return MercariScraper(
+            rate_limit_seconds=cfg.scraping.rate_limit_seconds,
+            headless=cfg.scraping.headless,
         )
 
     from hardware_scraper.scrapers.offerup import OfferUpScraper
