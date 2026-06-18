@@ -86,6 +86,17 @@ don't know parts value. A broken PS5 at $100 or a GPU with bent pins at $50 can 
 - [x] **LLM validation pass** — `pipeline/validate.py:run_llm_validate()` checks listings with margin >300% via Claude Haiku; drops accessories/services that slipped past regex. Runs at end of scan automatically.
 - [x] **Facebook city URL override** — `facebook.city_marketplace_url` config option; if set, browse uses that URL instead of lat/lon params (which Facebook often ignores). Lat/lon params also now include `radiusUnit=mi`.
 
+### Phase 2H — Amazon Fee Structure (next)
+User sells on **Amazon**, not eBay. eBay sold listings are used only as a price reference.
+Current fee formula uses eBay rates (13.25% + $0.30) which understates profit.
+
+- [ ] **Update fee config to Amazon rates** — replace `ebay_rate`/`ebay_fixed` with platform-agnostic names (`platform_rate`, `platform_fixed`). Amazon referral fee for electronics/computers is 8%; no per-item fee for Professional accounts.
+- [ ] **Clarify seller setup before implementing**: FBA vs FBM (affects whether shipping cost is paid to Amazon or self-shipped), Professional vs Individual account ($0.99/item fee for individual). *User was asked, answer pending.*
+- [ ] **Update margin formula label** in UI/reports to say "Amazon fees" instead of implying eBay.
+- [ ] **Per-category Amazon referral rates** if needed — phones/accessories are 8%, video games 15%, most PC hardware 8%.
+
+Example impact: RX 7600 at $125 asking / $217 eBay median → profit shows $48 (eBay formula) but is actually ~$75 (Amazon 8% formula).
+
 ---
 
 ## Pipeline
