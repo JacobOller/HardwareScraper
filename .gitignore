@@ -10,7 +10,8 @@ build/
 venv/
 .env
 
-# Database WAL files (transient, not the DB itself)
+# Database (synced via OneDrive/Dropbox, not git)
+data/*.db
 data/*.db-shm
 data/*.db-wal
 
