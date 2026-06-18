@@ -10,18 +10,16 @@ build/
 venv/
 .env
 
-# Database
-data/*.db
+# Database WAL files (transient, not the DB itself)
 data/*.db-shm
 data/*.db-wal
 
 # Browser sessions (contain auth cookies — never commit)
-data/browser_session/
-data/facebook_session/
-data/ebay_session/
-
-# Exports
-data/exports/
+data/browser_session/*
+data/facebook_session/*
+data/ebay_session/*
+data/exports/*
+!data/**/.gitkeep
 
 # Secrets
 keys.txt
