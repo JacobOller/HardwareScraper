@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import replace
 from typing import AsyncIterator, Optional
 
 from sqlalchemy import select
@@ -13,6 +15,12 @@ from hardware_scraper.models import Listing, Product, ListingProduct
 from hardware_scraper.parsers.category_rules import is_accessory_noise, is_refurb_noise
 from hardware_scraper.parsers.title_parser import ParsedTitle, TitleParser
 from hardware_scraper.scrapers.base import RawListing
+
+# Titles that say "see description" or similar without giving condition clues
+_SEE_DESC_RE = re.compile(
+    r"\b(see\s+(desc(ription)?|details?|photos?|pics?)|read\s+below|as\s+(described|pictured))\b",
+    re.IGNORECASE,
+)
 
 
 async def run_ingest(
@@ -119,6 +127,7 @@ def _store_listing(db, raw: RawListing, parser: TitleParser, llm_parser, cfg) ->
         description=raw.description,
         image_urls=json.dumps(raw.image_urls),
         posted_at=raw.posted_at,
+        is_local_pickup=raw.is_local_pickup,
         status="new",
     )
     db.add(listing)
@@ -128,6 +137,18 @@ def _store_listing(db, raw: RawListing, parser: TitleParser, llm_parser, cfg) ->
 
     if llm_parser and parsed.confidence < cfg.llm.confidence_threshold:
         parsed = llm_parser.parse(raw.title, raw.description or "")
+
+    # For identified hardware with vague condition clues, ask LLM to check description
+    if (
+        llm_parser
+        and parsed.condition == "used"
+        and parsed.category
+        and raw.description
+        and _SEE_DESC_RE.search(raw.title)
+    ):
+        refined = llm_parser.check_condition(raw.title, raw.description, parsed.category)
+        if refined and refined != "used":
+            parsed = replace(parsed, condition=refined)
 
     if parsed.canonical_name and parsed.confidence >= 0.5:
         product = db.execute(
@@ -193,6 +214,7 @@ def _make_scraper(cfg, source: str = "offerup"):
             radius_miles=cfg.scraping.radius_miles,
             rate_limit_seconds=cfg.scraping.rate_limit_seconds,
             headless=cfg.scraping.headless,
+            buy_it_now_only=cfg.ebay_local.buy_it_now_only,
         )
 
     if source == "mercari":

@@ -10,7 +10,7 @@ build/
 venv/
 .env
 
-# Database (synced via OneDrive/Dropbox, not git)
+# Database (synced via OneDrive, not git)
 data/*.db
 data/*.db-shm
 data/*.db-wal

@@ -35,11 +35,13 @@ class EbayLocalScraper(BaseScraper):
         radius_miles: int = 40,
         rate_limit_seconds: float = 3.0,
         headless: bool = True,
+        buy_it_now_only: bool = True,
     ) -> None:
         super().__init__(rate_limit_seconds)
         self._zip = zip_code
         self._radius = radius_miles
         self._headless = headless
+        self._bin_only = buy_it_now_only
 
     def _build_url(self, query: str = "", sacat: str = "0", page: int = 1) -> str:
         params = {
@@ -51,6 +53,8 @@ class EbayLocalScraper(BaseScraper):
             "_pgn": str(page),
             "rt": "nc",
         }
+        if self._bin_only:
+            params["LH_BIN"] = "1"   # Buy It Now only — excludes auction-format dealer spam
         return _SEARCH_BASE + "?" + "&".join(f"{k}={v}" for k, v in params.items())
 
     @asynccontextmanager
@@ -174,12 +178,15 @@ def _parse_s_card(item: Tag) -> Optional[RawListing]:
     if not title:
         return None
 
+    is_local_pickup = _detect_local_pickup_s_card(item)
+
     return RawListing(
         source="ebay_local",
         external_id=listing_id,
         url=f"https://www.ebay.com/itm/{listing_id}",
         title=title,
         price=price,
+        is_local_pickup=is_local_pickup,
     )
 
 
@@ -210,13 +217,40 @@ def _parse_s_item(item: Tag) -> Optional[RawListing]:
     if not title or title.lower() == "shop on ebay":
         return None
 
+    is_local_pickup = _detect_local_pickup_s_item(item)
+
     return RawListing(
         source="ebay_local",
         external_id=listing_id,
         url=f"https://www.ebay.com/itm/{listing_id}",
         title=title,
         price=price,
+        is_local_pickup=is_local_pickup,
     )
+
+
+def _detect_local_pickup_s_card(item: Tag) -> bool:
+    """Check s-card attribute rows for local pickup vs. paid shipping indicator."""
+    for row in item.select(".s-card__attribute-row"):
+        text = row.get_text(strip=True).lower()
+        if "local pickup" in text:
+            return True
+        if "shipping" in text and "$" in row.get_text():
+            return False
+    return True  # default: assume local (filter was LH_PrefLoc=99)
+
+
+def _detect_local_pickup_s_item(item: Tag) -> bool:
+    """Check s-item shipping detail for local pickup vs. paid shipping indicator."""
+    for sel in (".s-item__shipping", ".s-item__detail--primary", ".s-item__logisticsCost"):
+        el = item.select_one(sel)
+        if el:
+            text = el.get_text(strip=True).lower()
+            if "local pickup" in text:
+                return True
+            if "shipping" in text and "$" in el.get_text():
+                return False
+    return True  # default: assume local
 
 
 def _extract_title_s_card(item: Tag) -> str:

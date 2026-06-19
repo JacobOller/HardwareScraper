@@ -108,13 +108,20 @@ mercari:
 
 ebay_local:
   enabled: true              # eBay listings with local pickup only, filtered by ZIP + radius
+  buy_it_now_only: true      # exclude auction-format listings (dealers with many auctions clutter results)
+
+amazon:
+  enabled: false             # Scrape Amazon active listings as primary resale price reference
+                             # Amazon bot detection is aggressive; enable only if willing to handle CAPTCHAs
+  session_dir: "data/amazon_session"
+  rate_limit_seconds: 5.0    # Amazon needs more time between requests than eBay
 
 database:
   url: "sqlite:///data/hardware_scraper.db"
 
 output:
   csv_dir: "data/exports"
-  min_margin_to_show: -9999   # show all listings; raise to filter (e.g. 15 = only Marginal+)
+  min_margin_to_show: 15      # show Marginal+ by default; use -9999 or UI toggle to see all
 
 llm:
   enabled: true              # set true to enable Claude Haiku fallback for low-confidence titles

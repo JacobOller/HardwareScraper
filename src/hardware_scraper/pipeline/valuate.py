@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Dict, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,6 +29,20 @@ async def _ebay_scraper_ctx(use_api: bool) -> AsyncIterator[Optional[object]]:
             yield scraper
 
 
+@asynccontextmanager
+async def _amazon_scraper_ctx(cfg) -> AsyncIterator[Optional[object]]:
+    """Yield a shared AmazonScraper when amazon.enabled is true, else yield None."""
+    if not cfg.amazon.enabled:
+        yield None
+    else:
+        from hardware_scraper.amazon.scraper import AmazonScraper
+        async with AmazonScraper.session(
+            session_dir=cfg.amazon.session_dir,
+            rate_limit_seconds=cfg.amazon.rate_limit_seconds,
+        ) as scraper:
+            yield scraper
+
+
 async def run_valuate(min_confidence: float = 0.7) -> None:
     from rich.console import Console
 
@@ -43,74 +57,133 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
     )
     calculator = ValuationCalculator()
     use_api = bool(cfg.ebay.app_id and cfg.ebay.cert_id)
+    _amz_cache: Dict[int, Optional[float]] = {}
 
-    # Open one shared browser session for all eBay fetches in this run.
-    # This eliminates per-product browser launch/teardown (was ~4-5s each).
     async with _ebay_scraper_ctx(use_api) as shared_scraper:
-        with Session(engine) as db:
-            fetcher = CompFetcher(client=ebay_client, db=db, scraper=shared_scraper)
+        async with _amazon_scraper_ctx(cfg) as amazon_scraper:
+            with Session(engine) as db:
+                fetcher = CompFetcher(client=ebay_client, db=db, scraper=shared_scraper)
 
-            candidates = db.execute(
-                select(Listing, ListingProduct, Product)
-                .join(ListingProduct, ListingProduct.listing_id == Listing.id)
-                .join(Product, Product.id == ListingProduct.product_id)
-                .where(
-                    Listing.status == "identified",
-                    ListingProduct.confidence >= min_confidence,
-                )
-            ).all()
-
-            console.print(f"[cyan]Valuating {len(candidates)} listings…[/cyan]")
-            valuated = 0
-            skipped = 0
-
-            for listing, lp, product in candidates:
-                # Drop cheap listings before hitting eBay at all
-                if listing.price is not None and listing.price < MIN_ASKING_PRICE:
-                    skipped += 1
-                    continue
-
-                already = db.execute(
-                    select(Valuation).where(Valuation.listing_id == listing.id)
-                ).scalar_one_or_none()
-                if already:
-                    skipped += 1
-                    continue
-
-                try:
-                    comps = fetcher.get_cached_comps(product.id, lp.condition)
-                    if comps is None:
-                        comps = await fetcher.fetch_and_cache(product.id, product.canonical_name, lp.condition)
-
-                    median, count = fetcher.median_sold_price(comps)
-                    if count < MIN_COMP_COUNT:
-                        console.print(f"  [yellow]Too few comps ({count}) for {product.canonical_name}, skipping[/yellow]")
-                        skipped += 1
-                        continue
-
-                    result = calculator.calculate(listing.price, median, count, category=product.category)
-
-                    val = Valuation(
-                        listing_id=listing.id,
-                        product_id=product.id,
-                        ebay_median_price=result.ebay_median_price,
-                        ebay_comp_count=result.ebay_comp_count,
-                        estimated_fees=result.estimated_fees,
-                        estimated_shipping=result.estimated_shipping,
-                        net_resale=result.net_resale,
-                        profit=result.profit,
-                        margin_pct=result.margin_pct,
-                        margin_tier=result.margin_tier,
-                        margin_label=result.margin_label,
+                candidates = db.execute(
+                    select(Listing, ListingProduct, Product)
+                    .join(ListingProduct, ListingProduct.listing_id == Listing.id)
+                    .join(Product, Product.id == ListingProduct.product_id)
+                    .where(
+                        Listing.status == "identified",
+                        ListingProduct.confidence >= min_confidence,
                     )
-                    db.add(val)
-                    listing.status = "valuated"
-                    valuated += 1
+                ).all()
 
-                except Exception as exc:
-                    console.print(f"  [red]Error valuating listing {listing.id}: {exc}[/red]")
-                    skipped += 1
+                # Pre-load all existing valuation listing_ids — replaces N per-listing DB queries
+                existing_ids: set[int] = {
+                    row[0] for row in db.execute(select(Valuation.listing_id)).all()
+                }
 
-            db.commit()
+                # Filter to only listings that actually need valuation
+                to_valuate = [
+                    (listing, lp, product)
+                    for listing, lp, product in candidates
+                    if listing.id not in existing_ids
+                    and (listing.price is None or listing.price >= MIN_ASKING_PRICE)
+                ]
+
+                console.print(
+                    f"[cyan]Valuating {len(to_valuate)} listings "
+                    f"({len(candidates) - len(to_valuate)} already done/skipped)…[/cyan]"
+                )
+
+                if not to_valuate:
+                    console.print("[green]Nothing to valuate.[/green]")
+                    return
+
+                # Build unique (product_id, condition) → canonical_name
+                # so we pre-fetch all eBay comps before the valuation loop
+                pair_to_canonical: Dict[tuple, str] = {}
+                for _, lp, product in to_valuate:
+                    key = (product.id, lp.condition)
+                    if key not in pair_to_canonical:
+                        pair_to_canonical[key] = product.canonical_name
+
+                console.print(
+                    f"[cyan]Pre-fetching eBay comps for {len(pair_to_canonical)} unique products…[/cyan]"
+                )
+                for (product_id, condition), canonical_name in pair_to_canonical.items():
+                    if fetcher.get_cached_comps(product_id, condition) is None:
+                        try:
+                            await fetcher.fetch_and_cache(product_id, canonical_name, condition)
+                        except Exception as exc:
+                            console.print(
+                                f"  [yellow]eBay fetch failed for {canonical_name} ({condition}): {exc}[/yellow]"
+                            )
+
+                # Valuation loop — all eBay data is in DB cache now; no browser calls here
+                console.print("[cyan]Calculating margins…[/cyan]")
+                valuated = 0
+                skipped = 0
+
+                for listing, lp, product in to_valuate:
+                    try:
+                        comps = fetcher.get_cached_comps(product.id, lp.condition) or []
+                        median, count = fetcher.median_sold_price(comps)
+                        if count < MIN_COMP_COUNT:
+                            console.print(
+                                f"  [yellow]Too few comps ({count}) for {product.canonical_name}, skipping[/yellow]"
+                            )
+                            skipped += 1
+                            continue
+
+                        inbound_shipping = 0.0
+                        if not listing.is_local_pickup:
+                            inbound_shipping = cfg.shipping.for_category(product.category)
+
+                        amazon_price: Optional[float] = None
+                        if amazon_scraper is not None:
+                            if product.id not in _amz_cache:
+                                try:
+                                    _amz_cache[product.id] = await amazon_scraper.get_price(
+                                        product.canonical_name
+                                    )
+                                except Exception as exc:
+                                    console.print(
+                                        f"  [yellow]Amazon price fetch failed for {product.canonical_name}: {exc}[/yellow]"
+                                    )
+                                    _amz_cache[product.id] = None
+                            amazon_price = _amz_cache[product.id]
+                            if amazon_price:
+                                console.print(
+                                    f"  [blue]Amazon price ${amazon_price:.2f} for {product.canonical_name}[/blue]"
+                                )
+
+                        result = calculator.calculate(
+                            listing.price, median, count,
+                            category=product.category,
+                            inbound_shipping=inbound_shipping,
+                            amazon_price=amazon_price,
+                        )
+
+                        val = Valuation(
+                            listing_id=listing.id,
+                            product_id=product.id,
+                            ebay_median_price=result.ebay_median_price,
+                            ebay_comp_count=result.ebay_comp_count,
+                            estimated_fees=result.estimated_fees,
+                            estimated_shipping=result.estimated_shipping,
+                            inbound_shipping=result.inbound_shipping,
+                            amazon_price=result.amazon_price,
+                            net_resale=result.net_resale,
+                            profit=result.profit,
+                            margin_pct=result.margin_pct,
+                            margin_tier=result.margin_tier,
+                            margin_label=result.margin_label,
+                        )
+                        db.add(val)
+                        listing.status = "valuated"
+                        valuated += 1
+
+                    except Exception as exc:
+                        console.print(f"  [red]Error valuating listing {listing.id}: {exc}[/red]")
+                        skipped += 1
+
+                db.commit()
 
     console.print(f"[green]Done. Valuated: {valuated} | Skipped: {skipped}[/green]")

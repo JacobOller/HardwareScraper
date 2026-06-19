@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import String, Float, Integer, DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean
 from .base import Base
 
 
@@ -33,4 +34,6 @@ class Valuation(Base):
     margin_pct: Mapped[float] = mapped_column(Float)
     margin_tier: Mapped[int] = mapped_column(Integer)           # 1–5
     margin_label: Mapped[str] = mapped_column(String(32))       # Excellent, Good, etc.
+    inbound_shipping: Mapped[float] = mapped_column(Float, default=0.0)
+    amazon_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     valuated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

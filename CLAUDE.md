@@ -6,7 +6,7 @@ Finds underpriced PC hardware on local marketplace platforms (OfferUp, Facebook 
 
 ## Current Phase
 
-Phases 2A–2G complete. Phase 2B (automation/Discord) next. See `plan.md` for full roadmap.
+Phases 2A–2K complete. See `plan.md` for full roadmap.
 
 ## Tech Stack
 
@@ -230,9 +230,14 @@ Launch with `hardware-scraper ui` → opens `http://localhost:8000`.
 - **Scan All** button — runs the full pipeline (browse + all queries + valuate + LLM validate)
 - **Browse** / **Scrape** buttons — per-source controls with source selector + keyword input
 - **Valuate** button — re-runs margin calculation on new identified listings
-- **Validate LLM** button — LLM-checks listings with margin >300% and drops misrepresentations
+- **Validate LLM** button — LLM-checks listings with margin >60% and drops misrepresentations
 - Sortable columns: click any column header to sort ascending/descending
-- Filters: text search, category, source (OfferUp/Facebook), condition, margin tier
+- Filters: text search, category, source, condition, margin tier, price range, saved, show unprofitable toggle
+- **Local/Ship badge** — eBay Local listings show green "Local" or amber "Ship" sub-badge
+- **Price Ref column** — shows "AMZ $X" (green, Amazon active price) or "eBay $X" (grey, eBay median)
+- **Comp count** — shown as `(N)` next to price reference; red + dimmed row when < 3 comps
+- **Age column** — days since scraped_at (e.g. "3d"), helps identify stale listings
+- **Show unprofitable toggle** — checkbox to reveal Tier 4 (Low) and Tier 5 (Overpriced) rows
 - Stat cards: total listings, profitable count, excellent count, for-parts count, avg margin
 - Live job log panel — shows progress while a scan/scrape runs, auto-refreshes
 - Results auto-refresh after any job completes
@@ -284,18 +289,31 @@ llm:
   confidence_threshold: 0.5
 
 output:
-  min_margin_to_show: -9999    # show all; raise to filter (e.g. 15 = Marginal+)
+  min_margin_to_show: 15       # show Marginal+ by default; toggle "Show unprofitable" in UI for all
+
+amazon:
+  enabled: false               # scrape Amazon active listing prices as primary resale ref
+  session_dir: "data/amazon_session"
+  rate_limit_seconds: 5.0
 ```
 
 ## Known Issues / Gotchas
 
+### Open (Phase 2L+)
+- **MacBook screen size ordering** — MacBook regex captures size+chip in regex order; "MacBook Pro M3 14-inch" (chip before size) only captures chip. Acceptable limitation.
+- **Repeat dealer detection** — eBay Local sellers with 5+ listings in one scrape should be flagged; requires `seller_id` column on listings table.
+- **Amazon scraper reliability** — Amazon bot detection is aggressive; the scraper (`amazon/scraper.py`) may hit CAPTCHAs. Disabled by default (`amazon.enabled: false`). Enable only when willing to handle CAPTCHA flow.
+- **Cross-source duplicates** — same item listed on OU and FB appears as two separate opportunities; planned: fuzzy title+price dedup.
+- **No listing freshness tracking** — stale/sold listings linger in DB indefinitely; planned: `last_seen_at` + `status=stale` after missing from 3 scrapes.
+- **No price drop detection** — planned: `price_history` JSON column; show "↓ $X" badge for price drops.
+
+### Fixed
 - **Facebook login required** — first run must use `facebook.headless: false` to log in manually; session persists after that.
 - **eBay HTML changes frequently** — selectors in `ebay/scraper.py` may need updating. Run `scripts/debug_ebay.py` to diagnose.
 - **OfferUp `__NEXT_DATA__` path** changed once already. Legacy path kept as fallback in `_extract_listings`.
 - **All comps cached per (product_id, condition) for 24h** — run `scripts/reset_valuations.py` to force fresh fetch.
 - **OfferUp listing URLs** use UUID format: `https://offerup.com/item/detail/{uuid}` — links go dead quickly when sellers remove listings.
 - **Desktop confidence = 0.7** — desktop listings with a GPU identified get confidence 0.7 (category + model), which clears the 0.5 valuation threshold but may still miss some edge cases without LLM.
-- **MacBook screen size ordering** — MacBook regex captures size + chip in left-to-right order; if a seller writes "MacBook Pro M3 14-inch" (chip before size), only chip is captured, not size. Acceptable limitation.
 - **venv not committed** — the `.venv/` directory is gitignored and must be created fresh on a new machine: `python -m venv .venv && .venv/Scripts/pip install -e ".[dev]" && .venv/Scripts/playwright install chromium`. The `data/` directory must also be created: `mkdir -p data/browser_session data/facebook_session data/ebay_session data/exports`.
 - **LLM parser list-vs-dict (fixed 2026-06-16)** — Claude Haiku sometimes returns `[{...}]` instead of `{...}`. `llm_parser.py:_parse_response` now unwraps single-element arrays.
 - **$0 price filter (fixed 2026-06-16)** — listings with price ≤ 0 now dropped at ingest.
@@ -307,6 +325,18 @@ output:
 - **Facebook location via city URL (added 2026-06-17)** — `facebook.city_marketplace_url` config option overrides the lat/lon URL params for browse. Visit facebook.com/marketplace, navigate to your city, and paste the URL into config.yaml. Lat/lon params now also include `radiusUnit=mi`.
 - **LLM validation pass (added 2026-06-17)** — `run_llm_validate()` in `pipeline/validate.py` uses Claude Haiku to check listings with margin >300% and deletes valuations that are accessories/services. Runs automatically at end of scan; also available as `hardware-scraper validate` and **Validate LLM** button in web UI.
 - **eBay session reuse (added 2026-06-17)** — `EbayScraper.session()` async context manager holds one Playwright browser open for an entire `run_valuate()` call. Previously each product launched and closed a browser (~4-5s overhead each). Now it's a one-time cost. `CompFetcher(scraper=...)` accepts the shared instance.
+- **Amazon fee formula (updated 2026-06-18)** — `ValuationCalculator` now uses `amazon_referral_rate` (8%) + `amazon_per_item_fee` ($0.99); margin formula reflects actual Amazon FBM individual seller costs.
+- **Source labels in UI (fixed 2026-06-18)** — `dashboard.html` render function now maps each source to a distinct badge: OU (purple), FB (blue), EB (amber), CL (teal), MC (pink). Source filter and Browse/Scrape selectors updated to include all 5 sources.
+- **eBay Local auction spam (fixed 2026-06-18)** — `EbayLocalScraper` now adds `LH_BIN=1` (Buy It Now only) to all search URLs when `ebay_local.buy_it_now_only: true` (default). Auction-format dealer listings are excluded.
+- **Condition patterns expanded + apostrophe bug fixed (2026-06-18)** — Added 15+ new `for_parts` patterns (no signal, black screen, stuck on logo, screen issues, physically damaged, missing parts, charge port issue, liquid damage, needs repair, needs work, etc.). Fixed a curly-quote encoding bug where `won't` (ASCII apostrophe) was silently not matching the `['']` character class. 150 tests pass.
+- **is_local_pickup flag + inbound shipping (Phase 2I, 2026-06-19)** — `listings.is_local_pickup` stored at ingest; eBay Local scraper detects "Local Pickup" vs. paid-shipping items from HTML attribute rows. Non-local items deduct per-category inbound shipping from profit. UI shows green "Local" or amber "Ship" badge next to EB source label.
+- **LLM condition check for ambiguous titles (Phase 2I, 2026-06-19)** — When a title contains "see description", "read below", "as described", etc. and the regex inferred `used`, `LLMParser.check_condition()` reads the description and upgrades to `for_parts` or `like_new` if warranted. Gated by `llm.enabled`.
+- **Outlier comp filtering (Phase 2J, already active)** — `CompFetcher.median_sold_price()` applies IQR-based outlier removal when ≥4 comps available, trimming fluke high/low sales before computing median.
+- **Low-comp rows dimmed in UI (Phase 2J, 2026-06-19)** — Rows with `comp_count < 3` are rendered at 55% opacity with red count label `(N)` and `cursor: help` tooltip "Low comp count — margin estimate less reliable".
+- **Amazon active price scraper (Phase 2J, 2026-06-19)** — `amazon/scraper.py` — Playwright + stealth search, parses `span.a-price span.a-offscreen` for buy-box price. Stored as `valuations.amazon_price`. When `amazon.enabled: true`, used as primary resale reference instead of eBay median. UI shows green "AMZ $X" label when active. Disabled by default.
+- **UI: show unprofitable toggle (Phase 2K, 2026-06-19)** — New "Show unprofitable" checkbox hides Tier 4 (Low) and Tier 5 (Overpriced) rows by default. Default `output.min_margin_to_show` changed from -9999 to 15.
+- **UI: Days old column (Phase 2K, 2026-06-19)** — New "Age" column shows `scraped_at`-relative days (e.g. "3d"). Sortable. Helps identify fresh deals vs. stale listings.
+- **UI: Price Ref column (Phase 2K, 2026-06-19)** — "eBay Med" renamed to "Price Ref". Shows green "AMZ $X" when Amazon price available, grey "eBay $X" otherwise. Comp count `(N)` shows red if < 3 with tooltip.
 
 ## For-Parts Strategy
 

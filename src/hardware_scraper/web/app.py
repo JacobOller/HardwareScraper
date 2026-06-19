@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -58,6 +58,7 @@ def api_results():
             .order_by(Valuation.margin_pct.desc())
             .all()
         )
+        now = datetime.now(timezone.utc)
         return JSONResponse([
             {
                 "id": listing.id,
@@ -67,6 +68,7 @@ def api_results():
                 "category": product.category,
                 "condition": lp.condition,
                 "ebay_median": val.ebay_median_price,
+                "amazon_price": val.amazon_price,
                 "profit": round(val.profit, 2),
                 "margin_pct": round(val.margin_pct, 1),
                 "margin_tier": val.margin_tier,
@@ -74,6 +76,10 @@ def api_results():
                 "url": listing.url,
                 "comp_count": val.ebay_comp_count,
                 "saved": listing.saved,
+                "is_local_pickup": listing.is_local_pickup,
+                "inbound_shipping": val.inbound_shipping,
+                "days_old": (now - listing.scraped_at.replace(tzinfo=timezone.utc)).days
+                    if listing.scraped_at else None,
             }
             for listing, val, lp, product in rows
         ])

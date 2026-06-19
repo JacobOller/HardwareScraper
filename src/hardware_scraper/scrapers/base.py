@@ -19,6 +19,7 @@ class RawListing:
     description: Optional[str] = None
     image_urls: List[str] = field(default_factory=list)
     posted_at: Optional[datetime] = None
+    is_local_pickup: bool = True  # False = seller ships to you; affects inbound cost
 
 
 class BaseScraper(ABC):

@@ -51,18 +51,32 @@
   .badge-used      { background: #1f2937; color: #9ca3af; }
   .source-fb { color: #60a5fa; }
   .source-ou { color: #a78bfa; }
+  .source-eb { color: #f59e0b; }
+  .source-cl { color: #34d399; }
+  .source-mc { color: #f472b6; }
+  .badge-ship { display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; background: #292929; color: #fbbf24; margin-left: 3px; vertical-align: middle; }
+  .badge-local { display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; background: #14532d; color: #86efac; margin-left: 3px; vertical-align: middle; }
+  .badge-amz { display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; background: #1a2e1a; color: #4ade80; margin-left: 3px; vertical-align: middle; }
   a { color: #7eb8f7; text-decoration: none; }
   .btn-save { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 2px 4px; opacity: 0.35; transition: opacity 0.15s, transform 0.1s; line-height: 1; }
   .btn-save:hover { opacity: 0.8; transform: scale(1.2); }
   .btn-save.saved { opacity: 1; filter: none; }
   tr.row-saved td { background: #1a1800; }
   tr.row-saved:hover td { background: #222000; }
+  tr.row-low-comps td { opacity: 0.55; }
+  tr.row-low-comps:hover td { opacity: 0.75; }
   a:hover { text-decoration: underline; }
   .log-panel { background: #0a0a0a; border: 1px solid #222; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.75rem; height: 160px; overflow-y: auto; color: #6b7280; margin-top: 20px; }
   .log-panel .entry { margin-bottom: 2px; }
   .log-panel .entry.error { color: #f87171; }
   .empty { text-align: center; padding: 60px; color: #374151; }
   .empty p { margin-top: 8px; font-size: 0.85rem; }
+  .comp-low { color: #f87171; font-size: 0.7rem; }
+  .comp-ok  { color: #6b7280; font-size: 0.7rem; }
+  .price-ref { font-size: 0.72rem; font-weight: 600; }
+  .price-ref-amz { color: #4ade80; }
+  .price-ref-ebay { color: #6b7280; }
+  td[title] { cursor: help; }
 </style>
 </head>
 <body>
@@ -77,12 +91,15 @@
   <select class="source-select" id="source-sel">
     <option value="offerup">OfferUp</option>
     <option value="facebook">Facebook</option>
+    <option value="ebay_local">eBay Local</option>
+    <option value="craigslist">Craigslist</option>
+    <option value="mercari">Mercari</option>
   </select>
   <button class="btn-browse" onclick="browse()">Browse</button>
   <input type="text" id="query-input" placeholder="keyword (optional)" style="padding:7px 12px;background:#1f1f1f;color:#e0e0e0;border:1px solid #333;border-radius:6px;font-size:0.82rem;width:200px;">
   <button class="btn-scrape" onclick="scrape()">Scrape</button>
   <button class="btn-valuate" onclick="valuate()">Valuate</button>
-  <button class="btn-validate" onclick="validate()" title="LLM-check listings with margin >300% and drop misrepresentations">Validate LLM</button>
+  <button class="btn-validate" onclick="validate()" title="LLM-check listings with margin >60% and drop misrepresentations">Validate LLM</button>
   <button class="btn-refresh" onclick="loadResults()">Refresh</button>
   <button class="btn-reset" onclick="resetDB()" style="margin-left:auto">Reset DB</button>
 </div>
@@ -107,6 +124,9 @@
       <option value="">All sources</option>
       <option value="offerup">OfferUp</option>
       <option value="facebook">Facebook</option>
+      <option value="ebay_local">eBay Local</option>
+      <option value="craigslist">Craigslist</option>
+      <option value="mercari">Mercari</option>
     </select>
     <select id="filter-cond" onchange="render()">
       <option value="">All conditions</option>
@@ -128,6 +148,9 @@
     <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.82rem;color:#e0e0e0;padding:7px 10px;background:#1f1f1f;border:1px solid #333;border-radius:6px;">
       <input type="checkbox" id="filter-saved" onchange="render()" style="accent-color:#fbbf24;"> ★ Saved only
     </label>
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.82rem;color:#e0e0e0;padding:7px 10px;background:#1f1f1f;border:1px solid #333;border-radius:6px;" title="Show Tier 4 (Low) and Tier 5 (Overpriced) listings">
+      <input type="checkbox" id="filter-show-unprofitable" onchange="render()" style="accent-color:#6b7280;"> Show unprofitable
+    </label>
   </div>
 
   <table id="results-table">
@@ -139,10 +162,11 @@
         <th onclick="sort('category')">Category <span class="sort-arrow">↕</span></th>
         <th onclick="sort('condition')">Condition <span class="sort-arrow">↕</span></th>
         <th onclick="sort('price')" style="text-align:right">Ask <span class="sort-arrow">↕</span></th>
-        <th onclick="sort('ebay_median')" style="text-align:right">eBay Med <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('ebay_median')" style="text-align:right">Price Ref <span class="sort-arrow">↕</span></th>
         <th onclick="sort('profit')" style="text-align:right">Profit <span class="sort-arrow">↕</span></th>
         <th onclick="sort('margin_pct')" style="text-align:right">Margin <span class="sort-arrow">↕</span></th>
         <th onclick="sort('margin_tier')">Tier <span class="sort-arrow">↕</span></th>
+        <th onclick="sort('days_old')" style="text-align:right">Age <span class="sort-arrow">↕</span></th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -216,14 +240,15 @@ function sort(key) {
 }
 
 function render() {
-  const txt       = document.getElementById('filter-text').value.toLowerCase();
-  const cat       = document.getElementById('filter-cat').value;
-  const src       = document.getElementById('filter-src').value;
-  const cond      = document.getElementById('filter-cond').value;
-  const tier      = document.getElementById('filter-tier').value;
-  const minP      = parseFloat(document.getElementById('filter-min').value);
-  const maxP      = parseFloat(document.getElementById('filter-max').value);
-  const savedOnly = document.getElementById('filter-saved').checked;
+  const txt            = document.getElementById('filter-text').value.toLowerCase();
+  const cat            = document.getElementById('filter-cat').value;
+  const src            = document.getElementById('filter-src').value;
+  const cond           = document.getElementById('filter-cond').value;
+  const tier           = document.getElementById('filter-tier').value;
+  const minP           = parseFloat(document.getElementById('filter-min').value);
+  const maxP           = parseFloat(document.getElementById('filter-max').value);
+  const savedOnly      = document.getElementById('filter-saved').checked;
+  const showUnprof     = document.getElementById('filter-show-unprofitable').checked;
 
   let rows = _data.filter(d =>
     (!txt       || d.title.toLowerCase().includes(txt)) &&
@@ -233,7 +258,8 @@ function render() {
     (!tier      || String(d.margin_tier) === tier) &&
     (isNaN(minP) || d.price >= minP) &&
     (isNaN(maxP) || d.price <= maxP) &&
-    (!savedOnly  || d.saved)
+    (!savedOnly  || d.saved) &&
+    (showUnprof  || d.margin_tier <= 3)   // hide tier 4+5 unless toggle is on
   );
 
   rows.sort((a, b) => {
@@ -245,30 +271,63 @@ function render() {
 
   const tbody = document.getElementById('tbody');
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty">No results.<p>Run "Scan All" to fetch listings, then "Valuate".</p></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">No results.<p>Run "Scan All" to fetch listings, then "Valuate".</p></td></tr>`;
     return;
   }
 
   tbody.innerHTML = rows.map(d => {
     const tc = `tier-${d.margin_tier}`;
-    const src_label = d.source === 'facebook'
-      ? `<span class="source-fb">FB</span>`
-      : `<span class="source-ou">OU</span>`;
+    const lowComps = d.comp_count < 3;
+
+    // Source badge with Local/Ship sub-badge for eBay Local
+    const _src_map = {facebook:'source-fb',offerup:'source-ou',ebay_local:'source-eb',craigslist:'source-cl',mercari:'source-mc'};
+    const _src_lbl = {facebook:'FB',offerup:'OU',ebay_local:'EB',craigslist:'CL',mercari:'MC'};
+    let src_label = `<span class="${_src_map[d.source]||'source-ou'}">${_src_lbl[d.source]||d.source.toUpperCase().slice(0,2)}</span>`;
+    if (d.source === 'ebay_local') {
+      src_label += d.is_local_pickup
+        ? `<span class="badge-local">Local</span>`
+        : `<span class="badge-ship">Ship</span>`;
+    }
+
     const cond_badge = `<span class="badge badge-${d.condition}">${d.condition.replace('_',' ')}</span>`;
+
+    // Price reference: show Amazon price (green) when available, else eBay median (grey)
+    const hasAmz = d.amazon_price && d.amazon_price > 0;
+    const refPrice = hasAmz ? d.amazon_price : d.ebay_median;
+    const refClass = hasAmz ? 'price-ref price-ref-amz' : 'price-ref price-ref-ebay';
+    const refLabel = hasAmz ? 'AMZ' : 'eBay';
+    const compClass = lowComps ? 'comp-low' : 'comp-ok';
+    const compTitle = lowComps ? 'Low comp count — margin estimate less reliable' : `${d.comp_count} eBay sold comps`;
+    const priceRefCell = `<span class="${refClass}">${refLabel} $${refPrice.toFixed(0)}</span> <span class="${compClass}" title="${compTitle}">(${d.comp_count})</span>`;
+
+    // Inbound shipping tooltip on Ask price for shipped items
+    const askTitle = !d.is_local_pickup && d.inbound_shipping > 0
+      ? `title="Asking $${d.price.toFixed(0)} + ~$${d.inbound_shipping.toFixed(0)} inbound shipping"`
+      : '';
+
     const star = d.saved
       ? `<button class="btn-save saved" onclick="toggleSave(${d.id})" title="Unsave">★</button>`
       : `<button class="btn-save" onclick="toggleSave(${d.id})" title="Save">★</button>`;
-    return `<tr class="${d.saved ? 'row-saved' : ''}" id="row-${d.id}">
+
+    const daysOld = d.days_old != null ? `${d.days_old}d` : '—';
+
+    const rowClass = [
+      d.saved ? 'row-saved' : '',
+      lowComps ? 'row-low-comps' : '',
+    ].filter(Boolean).join(' ');
+
+    return `<tr class="${rowClass}" id="row-${d.id}">
       <td>${star}</td>
       <td><a href="${d.url}" target="_blank">${d.title.substring(0,48)}</a></td>
       <td>${src_label}</td>
       <td>${d.category}</td>
       <td>${cond_badge}</td>
-      <td style="text-align:right">$${d.price.toFixed(0)}</td>
-      <td style="text-align:right">$${d.ebay_median.toFixed(0)} <small style="color:#6b7280">(${d.comp_count})</small></td>
+      <td style="text-align:right" ${askTitle}>$${d.price.toFixed(0)}</td>
+      <td style="text-align:right">${priceRefCell}</td>
       <td style="text-align:right" class="${tc}">$${d.profit.toFixed(0)}</td>
       <td style="text-align:right" class="${tc}">${d.margin_pct.toFixed(1)}%</td>
       <td class="${tc}">${d.margin_label}</td>
+      <td style="text-align:right;color:#6b7280;font-size:0.78rem;">${daysOld}</td>
     </tr>`;
   }).join('');
 }

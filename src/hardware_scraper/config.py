@@ -97,7 +97,7 @@ class DatabaseConfig(BaseSettings):
 class OutputConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
     csv_dir: str = "data/exports"
-    min_margin_to_show: int = 0
+    min_margin_to_show: int = 15
 
 
 class LLMConfig(BaseSettings):
@@ -141,8 +141,21 @@ class MercariConfig:
 
 
 class EbayLocalConfig:
-    def __init__(self, enabled: bool = True) -> None:
+    def __init__(self, enabled: bool = True, buy_it_now_only: bool = True) -> None:
         self.enabled = enabled
+        self.buy_it_now_only = buy_it_now_only
+
+
+class AmazonConfig:
+    def __init__(
+        self,
+        enabled: bool = False,
+        session_dir: str = "data/amazon_session",
+        rate_limit_seconds: float = 5.0,
+    ) -> None:
+        self.enabled = enabled
+        self.session_dir = session_dir
+        self.rate_limit_seconds = rate_limit_seconds
 
 
 class AppConfig:
@@ -184,8 +197,17 @@ class AppConfig:
             enabled=bool(raw.get("mercari", {}).get("enabled", True))
         )
 
+        el_raw = raw.get("ebay_local", {})
         self.ebay_local = EbayLocalConfig(
-            enabled=bool(raw.get("ebay_local", {}).get("enabled", True))
+            enabled=bool(el_raw.get("enabled", True)),
+            buy_it_now_only=bool(el_raw.get("buy_it_now_only", True)),
+        )
+
+        amz_raw = raw.get("amazon", {})
+        self.amazon = AmazonConfig(
+            enabled=bool(amz_raw.get("enabled", False)),
+            session_dir=str(amz_raw.get("session_dir", "data/amazon_session")),
+            rate_limit_seconds=float(amz_raw.get("rate_limit_seconds", 5.0)),
         )
 
 

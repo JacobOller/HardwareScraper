@@ -54,14 +54,33 @@ _COMPONENT_CATEGORY_PATTERNS: list[tuple[str, list[str]]] = [
 
 _CONDITION_PATTERNS: list[tuple[str, list[str]]] = [
     ("for_parts", [
-        r"\bfor\s+parts?\b", r"\bnot\s+working\b", r"\bbroken\b", r"\bdead\b",
-        r"\buntested\b", r"\bas[- ]is\b", r"\bno\s+display\b", r"\bno\s+post\b",
-        r"\bno\s+power\b", r"\bwon['’]?t\s+power\s+on\b", r"\bpowers?\s+on\s+but\b",
-        r"\bcracked\s+screen\b", r"\bshattered\s+screen\b", r"\bbad\s+battery\b",
-        r"\bbent\s+pins?\b", r"\bwater\s+damage[d]?\b", r"\bwater\s+damaged?\b",
+        r"\bfor\s+parts?\b", r"\bparts\s+only\b", r"\bnot\s+working\b", r"\bbroken\b",
+        r"\bdead\b", r"\buntested\b", r"\bas[- ]is\b",
+        # Power / boot failures
+        r"\bno\s+display\b", r"\bno\s+post\b", r"\bno\s+power\b",
+        r"\bwon['']?t\s+power\s+on\b", r"\bwon['']?t\s+turn\s+on\b",
+        r"\bwont\s+(?:power|turn)\s+on\b",
+        r"\bdoes\s+not\s+(?:turn|power)\s+on\b",
+        r"\bno\s+boot\b", r"\bno\s+signal\b",
+        r"\bpowers?\s+on\s+but\b",
+        r"\bstuck\s+on\s+(?:logo|screen|bios)\b",
+        r"\bblack\s+screen\b", r"\bblank\s+screen\b",
+        # Screen / physical damage
+        r"\bcracked\s+screen\b", r"\bshattered\s+screen\b",
+        r"\bscreen\s+(?:cracked|broken|damaged|issues?)\b",
+        r"\bphysically\s+damaged?\b", r"\bdamaged\b",
+        r"\bbent\s+pins?\b", r"\bstripped\s+screws?\b",
+        r"\bmissing\s+parts?\b", r"\bincomplete\b",
+        # Battery / charging
+        r"\bbad\s+battery\b", r"\bbattery\s+(?:dead|bad|swollen|failing)\b",
+        r"\bcharge\s+port\s+(?:issue|broken|damaged)\b",
+        # Liquid / environmental
+        r"\bwater\s+damage[d]?\b", r"\bliquid\s+damage[d]?\b",
+        # Component faults
         r"\bbad\s+gpu\b", r"\bbios\s+only\b", r"\bsold\s+as\s+is\b",
-        r"\bdoes\s+not\s+turn\s+on\b", r"\bwont\s+turn\s+on\b", r"\bno\s+boot\b",
-        r"\bdamaged\b",
+        # Vague-but-clear damage signals
+        r"\bhas\s+issues?\b", r"\bwon['']?t\s+connect\b",
+        r"\bneeds\s+repair\b", r"\bneeds?\s+work\b",
     ]),
     ("like_new", [r"\blike\s+new\b", r"\bopen\s+box\b", r"\bsealed\b", r"\bnib\b",
                   r"\bnever\s+used\b", r"\bmint\b"]),

@@ -10,12 +10,46 @@ class LLMParser:
     """
     Sends low-confidence listing titles to Claude Haiku for structured extraction.
     Returns the same ParsedTitle format as TitleParser.
+    Also provides check_condition() for titles that defer to the description.
     """
 
     def __init__(self, api_key: str, model: str = "claude-haiku-4-5") -> None:
         import anthropic
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
+
+    def check_condition(self, title: str, description: str, category: str) -> Optional[str]:
+        """
+        Determine condition for listings with vague titles like 'see description'.
+        Returns 'for_parts', 'like_new', or 'used'; None if cannot determine.
+        """
+        prompt = f"""A local marketplace listing for a {category} has a vague title. Determine its condition from the description.
+
+Title: {title}
+Description: {description[:800] or "(none)"}
+
+Condition options:
+- for_parts: broken, not working, damaged, cracked screen, water damage, missing components, powers on but has issues, needs repair
+- like_new: barely used, mint, open box, never used, factory sealed
+- used: works normally, general wear and tear
+
+Reply with only one word: used, like_new, or for_parts"""
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=16,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            answer = response.content[0].text.strip().lower()
+            if "for_parts" in answer or "parts" in answer:
+                return "for_parts"
+            if "like_new" in answer or "like new" in answer:
+                return "like_new"
+            if "used" in answer:
+                return "used"
+        except Exception:
+            pass
+        return None
 
     def parse(self, title: str, description: str = "") -> ParsedTitle:
         prompt = _build_prompt(title, description)
