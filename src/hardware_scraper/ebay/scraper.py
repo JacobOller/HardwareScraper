@@ -106,8 +106,15 @@ class EbayScraper:
         page_num = 1
         while len(results) < limit:
             url = base_url + f"&_pgn={page_num}"
-            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-            await page.wait_for_timeout(3000)
+            for attempt in range(3):
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                    break
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    await page.wait_for_timeout(10_000 * (attempt + 1))
+            await page.wait_for_timeout(1500)
 
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")

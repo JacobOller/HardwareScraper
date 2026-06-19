@@ -120,15 +120,13 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
                 console.print("[cyan]Calculating margins…[/cyan]")
                 valuated = 0
                 skipped = 0
+                COMMIT_EVERY = 50
 
-                for listing, lp, product in to_valuate:
+                for i, (listing, lp, product) in enumerate(to_valuate):
                     try:
                         comps = fetcher.get_cached_comps(product.id, lp.condition) or []
                         median, count = fetcher.median_sold_price(comps)
                         if count < MIN_COMP_COUNT:
-                            console.print(
-                                f"  [yellow]Too few comps ({count}) for {product.canonical_name}, skipping[/yellow]"
-                            )
                             skipped += 1
                             continue
 
@@ -149,10 +147,6 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
                                     )
                                     _amz_cache[product.id] = None
                             amazon_price = _amz_cache[product.id]
-                            if amazon_price:
-                                console.print(
-                                    f"  [blue]Amazon price ${amazon_price:.2f} for {product.canonical_name}[/blue]"
-                                )
 
                         result = calculator.calculate(
                             listing.price, median, count,
@@ -183,6 +177,10 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
                     except Exception as exc:
                         console.print(f"  [red]Error valuating listing {listing.id}: {exc}[/red]")
                         skipped += 1
+
+                    if (i + 1) % COMMIT_EVERY == 0:
+                        db.commit()
+                        console.print(f"  [dim]Committed {valuated} valuations so far…[/dim]")
 
                 db.commit()
 
