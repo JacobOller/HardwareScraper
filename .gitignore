@@ -10,17 +10,8 @@ build/
 venv/
 .env
 
-# Database (synced via OneDrive, not git)
-data/*.db
-data/*.db-shm
-data/*.db-wal
-
-# Browser sessions (contain auth cookies — never commit)
-data/browser_session/*
-data/facebook_session/*
-data/ebay_session/*
-data/exports/*
-!data/**/.gitkeep
+# data/ is a symlink to OneDrive on each machine — not tracked by git
+data
 
 # Secrets
 keys.txt
