@@ -22,4 +22,5 @@ class Listing(Base):
     scraped_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     status: Mapped[str] = mapped_column(String(32), default="new")  # new, identified, valuated, skipped
     saved: Mapped[bool] = mapped_column(default=False)
+    hidden: Mapped[bool] = mapped_column(default=False)
     is_local_pickup: Mapped[bool] = mapped_column(default=True)  # False = ships to buyer; eBay Local only

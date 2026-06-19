@@ -76,6 +76,7 @@ def api_results():
                 "url": listing.url,
                 "comp_count": val.ebay_comp_count,
                 "saved": listing.saved,
+                "hidden": listing.hidden,
                 "is_local_pickup": listing.is_local_pickup,
                 "inbound_shipping": val.inbound_shipping,
                 "days_old": (now - listing.scraped_at.replace(tzinfo=timezone.utc)).days
@@ -222,6 +223,19 @@ def api_save_listing(listing_id: int):
         listing.saved = not listing.saved
         db.commit()
         return JSONResponse({"id": listing_id, "saved": listing.saved})
+
+
+@app.post("/api/listings/{listing_id}/hide")
+def api_hide_listing(listing_id: int):
+    cfg = get_config()
+    engine = make_engine(cfg.database.url)
+    with Session(engine) as db:
+        listing = db.get(Listing, listing_id)
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        listing.hidden = not listing.hidden
+        db.commit()
+        return JSONResponse({"id": listing_id, "hidden": listing.hidden})
 
 
 @app.delete("/api/reset")

@@ -61,6 +61,8 @@
   .btn-save { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 2px 4px; opacity: 0.35; transition: opacity 0.15s, transform 0.1s; line-height: 1; }
   .btn-save:hover { opacity: 0.8; transform: scale(1.2); }
   .btn-save.saved { opacity: 1; filter: none; }
+  .btn-hide { background: none; border: none; cursor: pointer; font-size: 0.85rem; padding: 2px 4px; opacity: 0.2; color: #f87171; transition: opacity 0.15s, transform 0.1s; line-height: 1; }
+  .btn-hide:hover { opacity: 0.8; transform: scale(1.2); }
   tr.row-saved td { background: #1a1800; }
   tr.row-saved:hover td { background: #222000; }
   tr.row-low-comps td { opacity: 0.55; }
@@ -151,12 +153,15 @@
     <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.82rem;color:#e0e0e0;padding:7px 10px;background:#1f1f1f;border:1px solid #333;border-radius:6px;" title="Show Tier 4 (Low) and Tier 5 (Overpriced) listings">
       <input type="checkbox" id="filter-show-unprofitable" onchange="render()" style="accent-color:#6b7280;"> Show unprofitable
     </label>
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.82rem;color:#9ca3af;padding:7px 10px;background:#1f1f1f;border:1px solid #333;border-radius:6px;" title="Show listings you dismissed as not interested">
+      <input type="checkbox" id="filter-show-hidden" onchange="render()" style="accent-color:#f87171;"> Show dismissed
+    </label>
   </div>
 
   <table id="results-table">
     <thead>
       <tr>
-        <th style="width:28px"></th>
+        <th style="width:52px"></th>
         <th onclick="sort('title')">Title <span class="sort-arrow">↕</span></th>
         <th onclick="sort('source')">Source <span class="sort-arrow">↕</span></th>
         <th onclick="sort('category')">Category <span class="sort-arrow">↕</span></th>
@@ -249,6 +254,7 @@ function render() {
   const maxP           = parseFloat(document.getElementById('filter-max').value);
   const savedOnly      = document.getElementById('filter-saved').checked;
   const showUnprof     = document.getElementById('filter-show-unprofitable').checked;
+  const showHidden     = document.getElementById('filter-show-hidden').checked;
 
   let rows = _data.filter(d =>
     (!txt       || d.title.toLowerCase().includes(txt)) &&
@@ -259,7 +265,8 @@ function render() {
     (isNaN(minP) || d.price >= minP) &&
     (isNaN(maxP) || d.price <= maxP) &&
     (!savedOnly  || d.saved) &&
-    (showUnprof  || d.margin_tier <= 3)   // hide tier 4+5 unless toggle is on
+    (showUnprof  || d.margin_tier <= 3) &&  // hide tier 4+5 unless toggle is on
+    (showHidden  || !d.hidden)              // hide dismissed unless toggle is on
   );
 
   rows.sort((a, b) => {
@@ -309,6 +316,8 @@ function render() {
       ? `<button class="btn-save saved" onclick="toggleSave(${d.id})" title="Unsave">★</button>`
       : `<button class="btn-save" onclick="toggleSave(${d.id})" title="Save">★</button>`;
 
+    const hideBtn = `<button class="btn-hide" onclick="toggleHide(${d.id})" title="${d.hidden ? 'Restore' : 'Not interested'}">✕</button>`;
+
     const daysOld = d.days_old != null ? `${d.days_old}d` : '—';
 
     const rowClass = [
@@ -317,7 +326,7 @@ function render() {
     ].filter(Boolean).join(' ');
 
     return `<tr class="${rowClass}" id="row-${d.id}">
-      <td>${star}</td>
+      <td>${star}${hideBtn}</td>
       <td><a href="${d.url}" target="_blank">${d.title.substring(0,48)}</a></td>
       <td>${src_label}</td>
       <td>${d.category}</td>
@@ -337,6 +346,14 @@ async function toggleSave(id) {
   const j = await r.json();
   const entry = _data.find(d => d.id === id);
   if (entry) entry.saved = j.saved;
+  render();
+}
+
+async function toggleHide(id) {
+  const r = await fetch(`/api/listings/${id}/hide`, { method: 'POST' });
+  const j = await r.json();
+  const entry = _data.find(d => d.id === id);
+  if (entry) entry.hidden = j.hidden;
   render();
 }
 
