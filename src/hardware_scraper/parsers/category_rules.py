@@ -222,8 +222,9 @@ LAPTOP_BRAND_PATTERNS = [
 LAPTOP_MODEL_PATTERNS = [
     r"(ThinkPad\s+X1\s+(?:Carbon|Yoga|Extreme|Nano)(?:\s+Gen\s*\d+)?)",
     r"(ThinkPad\s+[A-Z]\d+[a-z]?(?:\s+Gen\s*\d+)?)",
-    # MacBook: capture screen size (14/16/13 inch), chip (M1/M2/M3/M4/M5 + Pro/Max/Ultra), year
-    r"(MacBook\s+(?:Pro|Air)(?:\s+\d{2}(?:[- ]?inch)?)?(?:\s+M\d+(?:\s+(?:Pro|Max|Ultra))?)?(?:\s+\d{4})?)",
+    # MacBook: capture screen size (13/14/15/16 inch), chip (M1/M2/M3/M4/M5 + Pro/Max/Ultra), year
+    # Size uses explicit list to avoid matching first 2 digits of a year (e.g. "2017" → "20")
+    r"(MacBook\s+(?:Pro|Air)(?:\s+(?:13|14|15|16)(?:[- ]?inch)?)?(?:\s+M\d+(?:\s+(?:Pro|Max|Ultra))?)?(?:\s+(?:20\d{2}))?)",
     r"(EliteBook\s+\d+\w*\s*G\d+)",
     r"(ProBook\s+\d+\w*\s*G\d*)",
     r"(Latitude\s+[A-Z]?\d+\w*)",

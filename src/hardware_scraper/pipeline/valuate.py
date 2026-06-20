@@ -97,7 +97,8 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
                     return
 
                 # Build unique (product_id, condition) → canonical_name
-                # so we pre-fetch all eBay comps before the valuation loop
+                # so we pre-fetch all eBay comps before the valuation loop.
+                # for_parts listings also need a "working_used" fetch (handled inside fetch_and_cache).
                 pair_to_canonical: Dict[tuple, str] = {}
                 for _, lp, product in to_valuate:
                     key = (product.id, lp.condition)
@@ -130,6 +131,15 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
                             skipped += 1
                             continue
 
+                        working_median: Optional[float] = None
+                        working_count: Optional[int] = None
+                        if lp.condition == "for_parts":
+                            working_comps = fetcher.get_cached_comps(product.id, "working_used") or []
+                            wm, wc = fetcher.median_sold_price(working_comps)
+                            if wc >= MIN_COMP_COUNT:
+                                working_median = wm
+                                working_count = wc
+
                         inbound_shipping = 0.0
                         if not listing.is_local_pickup:
                             inbound_shipping = cfg.shipping.for_category(product.category)
@@ -153,6 +163,8 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
                             category=product.category,
                             inbound_shipping=inbound_shipping,
                             amazon_price=amazon_price,
+                            working_comp_price=working_median,
+                            working_comp_count=working_count,
                         )
 
                         val = Valuation(
@@ -164,6 +176,8 @@ async def run_valuate(min_confidence: float = 0.7) -> None:
                             estimated_shipping=result.estimated_shipping,
                             inbound_shipping=result.inbound_shipping,
                             amazon_price=result.amazon_price,
+                            working_comp_price=result.working_comp_price,
+                            working_comp_count=result.working_comp_count,
                             net_resale=result.net_resale,
                             profit=result.profit,
                             margin_pct=result.margin_pct,

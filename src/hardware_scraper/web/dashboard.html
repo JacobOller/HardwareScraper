@@ -67,6 +67,21 @@
   tr.row-saved:hover td { background: #222000; }
   tr.row-low-comps td { opacity: 0.55; }
   tr.row-low-comps:hover td { opacity: 0.75; }
+  tr.row-pending td { background: #1a1400; }
+  tr.row-pending:hover td { background: #251c00; }
+  tr.row-pending td:first-child { border-left: 3px solid #f59e0b; }
+  .btn-buy { background: none; border: none; cursor: pointer; font-size: 0.82rem; padding: 2px 4px; opacity: 0.25; color: #f59e0b; transition: opacity 0.15s, transform 0.1s; line-height: 1; font-weight: 700; }
+  .btn-buy:hover { opacity: 0.9; transform: scale(1.15); }
+  .btn-buy.bought { opacity: 1; color: #f59e0b; }
+  .section-header { font-size: 0.95rem; font-weight: 700; color: #9ca3af; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #2a2a2a; display: flex; align-items: center; gap: 10px; }
+  .section-header span { font-size: 0.75rem; font-weight: 400; color: #6b7280; }
+  .portfolio-empty { color: #374151; font-size: 0.82rem; padding: 16px 0; }
+  .btn-sell { padding: 4px 10px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.75rem; font-weight: 600; background: #16a34a; color: #fff; transition: opacity 0.15s; }
+  .btn-sell:hover { opacity: 0.8; }
+  .btn-undo { padding: 3px 8px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.72rem; font-weight: 500; background: #292929; color: #9ca3af; transition: opacity 0.15s; margin-left: 4px; }
+  .btn-undo:hover { opacity: 0.7; }
+  .profit-pos { color: #22c55e; font-weight: 700; }
+  .profit-neg { color: #f87171; font-weight: 700; }
   a:hover { text-decoration: underline; }
   .log-panel { background: #0a0a0a; border: 1px solid #222; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.75rem; height: 160px; overflow-y: auto; color: #6b7280; margin-top: 20px; }
   .log-panel .entry { margin-bottom: 2px; }
@@ -177,6 +192,38 @@
     <tbody id="tbody"></tbody>
   </table>
 
+  <!-- Bought (pending) section -->
+  <div class="section-header">📦 Bought <span id="bought-count"></span></div>
+  <table id="bought-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Title</th>
+        <th style="text-align:right;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Paid</th>
+        <th style="text-align:right;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Est. Resale</th>
+        <th style="text-align:right;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Est. Profit</th>
+        <th style="text-align:right;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Days Held</th>
+        <th style="padding:8px 12px;background:#1a1a1a;border-bottom:1px solid #2a2a2a;"></th>
+      </tr>
+    </thead>
+    <tbody id="bought-tbody"></tbody>
+  </table>
+
+  <!-- Sold section -->
+  <div class="section-header">✅ Sold <span id="sold-count"></span></div>
+  <table id="sold-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Title</th>
+        <th style="text-align:right;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Paid</th>
+        <th style="text-align:right;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Sold For</th>
+        <th style="text-align:right;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Profit</th>
+        <th style="text-align:right;padding:8px 12px;background:#1a1a1a;color:#9ca3af;border-bottom:1px solid #2a2a2a;">Days to Sell</th>
+        <th style="padding:8px 12px;background:#1a1a1a;border-bottom:1px solid #2a2a2a;"></th>
+      </tr>
+    </thead>
+    <tbody id="sold-tbody"></tbody>
+  </table>
+
   <div class="log-panel" id="log-panel"></div>
 </div>
 
@@ -219,6 +266,7 @@ async function loadResults() {
   document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
   renderStats();
   render();
+  renderPortfolio();
 }
 
 function renderStats() {
@@ -300,12 +348,15 @@ function render() {
 
     // Price reference: show Amazon price (green) when available, else eBay median (grey)
     const hasAmz = d.amazon_price && d.amazon_price > 0;
-    const refPrice = hasAmz ? d.amazon_price : d.ebay_median;
+    const refPrice = hasAmz ? d.amazon_price : (d.working_comp_price || d.ebay_median);
     const refClass = hasAmz ? 'price-ref price-ref-amz' : 'price-ref price-ref-ebay';
     const refLabel = hasAmz ? 'AMZ' : 'eBay';
     const compClass = lowComps ? 'comp-low' : 'comp-ok';
     const compTitle = lowComps ? 'Low comp count — margin estimate less reliable' : `${d.comp_count} eBay sold comps`;
-    const priceRefCell = `<span class="${refClass}">${refLabel} $${refPrice.toFixed(0)}</span> <span class="${compClass}" title="${compTitle}">(${d.comp_count})</span>`;
+    let priceRefCell = `<span class="${refClass}">${refLabel} $${refPrice.toFixed(0)}</span> <span class="${compClass}" title="${compTitle}">(${d.comp_count})</span>`;
+    if (d.repair_upside && d.repair_upside > 0) {
+      priceRefCell += ` <span style="color:#fb923c;font-size:0.75rem;font-weight:600" title="Repair upside: working eBay $${d.working_comp_price.toFixed(0)} vs broken floor $${d.ebay_median.toFixed(0)}">↑$${d.repair_upside.toFixed(0)}</span>`;
+    }
 
     // Inbound shipping tooltip on Ask price for shipped items
     const askTitle = !d.is_local_pickup && d.inbound_shipping > 0
@@ -320,13 +371,19 @@ function render() {
 
     const daysOld = d.days_old != null ? `${d.days_old}d` : '—';
 
+    const isPending = d.bought_at && !d.sold_at;
+    const buyBtn = d.bought_at
+      ? `<button class="btn-buy bought" onclick="toggleBuy(${d.id})" title="Bought — click to undo">💰</button>`
+      : `<button class="btn-buy" onclick="toggleBuy(${d.id})" title="Mark as bought">💰</button>`;
+
     const rowClass = [
       d.saved ? 'row-saved' : '',
       lowComps ? 'row-low-comps' : '',
+      isPending ? 'row-pending' : '',
     ].filter(Boolean).join(' ');
 
     return `<tr class="${rowClass}" id="row-${d.id}">
-      <td>${star}${hideBtn}</td>
+      <td>${star}${hideBtn}${buyBtn}</td>
       <td><a href="${d.url}" target="_blank">${d.title.substring(0,48)}</a></td>
       <td>${src_label}</td>
       <td>${d.category}</td>
@@ -339,6 +396,120 @@ function render() {
       <td style="text-align:right;color:#6b7280;font-size:0.78rem;">${daysOld}</td>
     </tr>`;
   }).join('');
+}
+
+async function toggleBuy(id) {
+  const entry = _data.find(d => d.id === id);
+  let price = null;
+  if (!entry.bought_at) {
+    const input = prompt(`Mark as bought — price paid? (default: $${entry.price.toFixed(0)})`, entry.price.toFixed(0));
+    if (input === null) return; // cancelled
+    price = parseFloat(input) || entry.price;
+  }
+  const url = `/api/listings/${id}/buy` + (price !== null ? `?price=${price}` : '');
+  const r = await fetch(url, { method: 'POST' });
+  const j = await r.json();
+  if (j.error) { alert(j.error); return; }
+  if (entry) {
+    entry.bought_at = j.bought_at;
+    entry.bought_price = j.bought_price;
+  }
+  render();
+  renderPortfolio();
+}
+
+async function markSold(id) {
+  const entry = _data.find(d => d.id === id);
+  if (!entry) return;
+  const input = prompt(`Sold price for:\n"${entry.title.substring(0,60)}"`, '');
+  if (input === null || input.trim() === '') return;
+  const price = parseFloat(input);
+  if (isNaN(price) || price <= 0) { alert('Enter a valid sale price.'); return; }
+  const r = await fetch(`/api/listings/${id}/sell?price=${price}`, { method: 'POST' });
+  const j = await r.json();
+  if (j.error) { alert(j.error); return; }
+  if (entry) {
+    entry.sold_at = j.sold_at;
+    entry.sold_price = j.sold_price;
+  }
+  render();
+  renderPortfolio();
+}
+
+async function undoSell(id) {
+  const entry = _data.find(d => d.id === id);
+  const price = entry?.sold_price ?? 1; // price is ignored on toggle-off path
+  const r = await fetch(`/api/listings/${id}/sell?price=${price}`, { method: 'POST' });
+  const j = await r.json();
+  if (j.error) { alert(j.error); return; }
+  if (entry) { entry.sold_at = j.sold_at; entry.sold_price = j.sold_price; }
+  render();
+  renderPortfolio();
+}
+
+function renderPortfolio() {
+  const bought = _data.filter(d => d.bought_at && !d.sold_at);
+  const sold   = _data.filter(d => d.bought_at && d.sold_at);
+
+  document.getElementById('bought-count').textContent = bought.length ? `(${bought.length})` : '';
+  document.getElementById('sold-count').textContent   = sold.length   ? `(${sold.length})`   : '';
+
+  const bTbody = document.getElementById('bought-tbody');
+  if (bought.length === 0) {
+    bTbody.innerHTML = `<tr><td colspan="6" class="portfolio-empty" style="padding:14px 12px;">No items bought yet — click 💰 on a listing to mark it purchased.</td></tr>`;
+  } else {
+    bTbody.innerHTML = bought.map(d => {
+      const paid = d.bought_price ?? d.price;
+      const resale = d.amazon_price || d.ebay_median || 0;
+      const estProfit = resale ? (resale * 0.92 - 0.99 - 15 - paid) : null;
+      const profitHtml = estProfit != null
+        ? `<span class="${estProfit >= 0 ? 'profit-pos' : 'profit-neg'}">$${estProfit.toFixed(0)}</span>`
+        : '—';
+      const daysHeld = d.bought_at
+        ? Math.floor((Date.now() - new Date(d.bought_at)) / 86400000)
+        : 0;
+      return `<tr style="border-bottom:1px solid #1a1a1a;">
+        <td style="padding:9px 12px;"><a href="${d.url}" target="_blank">${d.title.substring(0,55)}</a></td>
+        <td style="text-align:right;padding:9px 12px;color:#f59e0b;">$${paid.toFixed(0)}</td>
+        <td style="text-align:right;padding:9px 12px;color:#6b7280;">${resale ? '$' + resale.toFixed(0) : '—'}</td>
+        <td style="text-align:right;padding:9px 12px;">${profitHtml}</td>
+        <td style="text-align:right;padding:9px 12px;color:#6b7280;">${daysHeld}d</td>
+        <td style="padding:9px 12px;white-space:nowrap;">
+          <button class="btn-sell" onclick="markSold(${d.id})">Mark Sold</button>
+          <button class="btn-undo" onclick="toggleBuy(${d.id})" title="Undo buy">✕</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  const sTbody = document.getElementById('sold-tbody');
+  if (sold.length === 0) {
+    sTbody.innerHTML = `<tr><td colspan="6" class="portfolio-empty" style="padding:14px 12px;">No sold items yet.</td></tr>`;
+  } else {
+    const totalProfit = sold.reduce((s, d) => s + ((d.sold_price ?? 0) - (d.bought_price ?? d.price)), 0);
+    sTbody.innerHTML = sold.map(d => {
+      const paid = d.bought_price ?? d.price;
+      const profit = (d.sold_price ?? 0) - paid;
+      const daysToSell = d.bought_at && d.sold_at
+        ? Math.floor((new Date(d.sold_at) - new Date(d.bought_at)) / 86400000)
+        : '—';
+      return `<tr style="border-bottom:1px solid #1a1a1a;">
+        <td style="padding:9px 12px;"><a href="${d.url}" target="_blank">${d.title.substring(0,55)}</a></td>
+        <td style="text-align:right;padding:9px 12px;color:#6b7280;">$${paid.toFixed(0)}</td>
+        <td style="text-align:right;padding:9px 12px;color:#7eb8f7;">$${(d.sold_price ?? 0).toFixed(0)}</td>
+        <td style="text-align:right;padding:9px 12px;"><span class="${profit >= 0 ? 'profit-pos' : 'profit-neg'}">$${profit.toFixed(0)}</span></td>
+        <td style="text-align:right;padding:9px 12px;color:#6b7280;">${daysToSell}d</td>
+        <td style="padding:9px 12px;">
+          <button class="btn-undo" onclick="undoSell(${d.id})" title="Undo sell">Undo sell</button>
+        </td>
+      </tr>`;
+    }).join('');
+    sTbody.innerHTML += `<tr>
+      <td colspan="3" style="padding:10px 12px;color:#6b7280;font-size:0.75rem;">Total realized profit</td>
+      <td style="text-align:right;padding:10px 12px;font-weight:700;" class="${totalProfit >= 0 ? 'profit-pos' : 'profit-neg'}">$${totalProfit.toFixed(0)}</td>
+      <td colspan="2"></td>
+    </tr>`;
+  }
 }
 
 async function toggleSave(id) {

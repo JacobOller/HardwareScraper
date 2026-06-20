@@ -19,24 +19,14 @@ class ValuationResult:
     margin_tier: int
     margin_label: str
     amazon_price: Optional[float] = None
+    working_comp_price: Optional[float] = None
+    working_comp_count: Optional[int] = None
 
 
 _TIER_LABELS = {1: "Excellent", 2: "Good", 3: "Marginal", 4: "Low", 5: "Overpriced"}
 
 
 class ValuationCalculator:
-    """
-    Computes profit margin from asking price and eBay comp data.
-
-    eBay sold listings are used for price discovery only. Fees are Amazon FBM (individual seller):
-        estimated_fees = median_ebay_sold * amazon_referral_rate + amazon_per_item_fee
-        net_resale     = median_ebay_sold - estimated_fees - outbound_shipping
-        profit         = net_resale - asking_price
-        margin_pct     = (profit / asking_price) * 100
-
-    Outbound shipping is looked up per product category from config.shipping.by_category.
-    """
-
     def __init__(self) -> None:
         self._cfg = get_config()
 
@@ -48,12 +38,23 @@ class ValuationCalculator:
         category: Optional[str] = None,
         inbound_shipping: float = 0.0,
         amazon_price: Optional[float] = None,
+        working_comp_price: Optional[float] = None,
+        working_comp_count: Optional[int] = None,
     ) -> ValuationResult:
         fees = self._cfg.fees
         outbound_shipping = self._cfg.shipping.for_category(category)
-        # Use Amazon active price as primary reference when available; eBay median as fallback
-        resale_ref = amazon_price if (amazon_price and amazon_price > 0) else ebay_median
-        estimated_fees = resale_ref * fees.amazon_referral_rate + fees.amazon_per_item_fee
+        # For for_parts listings, use the working-used comp as resale target (post-repair value).
+        # ebay_median holds the for-parts floor; working_comp_price is what it sells for repaired.
+        if working_comp_price and working_comp_price > 0:
+            resale_ref = working_comp_price
+        elif amazon_price and amazon_price > 0:
+            resale_ref = amazon_price
+        else:
+            resale_ref = ebay_median
+        if fees.platform == "amazon":
+            estimated_fees = resale_ref * fees.amazon_referral_rate + fees.amazon_per_item_fee
+        else:
+            estimated_fees = resale_ref * fees.ebay_rate
         net_resale = resale_ref - estimated_fees - outbound_shipping
         profit = net_resale - asking_price - inbound_shipping
         margin_pct = (profit / asking_price * 100) if asking_price > 0 else 0.0
@@ -70,6 +71,8 @@ class ValuationCalculator:
             margin_tier=tier,
             margin_label=label,
             amazon_price=round(amazon_price, 2) if amazon_price else None,
+            working_comp_price=round(working_comp_price, 2) if working_comp_price else None,
+            working_comp_count=working_comp_count,
         )
 
     def _classify(self, margin_pct: float) -> tuple[int, str]:

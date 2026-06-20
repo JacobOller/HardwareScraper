@@ -79,8 +79,16 @@ def api_results():
                 "hidden": listing.hidden,
                 "is_local_pickup": listing.is_local_pickup,
                 "inbound_shipping": val.inbound_shipping,
+                "working_comp_price": val.working_comp_price,
+                "working_comp_count": val.working_comp_count,
+                "repair_upside": round(val.working_comp_price - val.ebay_median_price, 2)
+                    if val.working_comp_price and val.ebay_median_price else None,
                 "days_old": (now - listing.scraped_at.replace(tzinfo=timezone.utc)).days
                     if listing.scraped_at else None,
+                "bought_at": listing.bought_at.isoformat() if listing.bought_at else None,
+                "bought_price": listing.bought_price,
+                "sold_at": listing.sold_at.isoformat() if listing.sold_at else None,
+                "sold_price": listing.sold_price,
             }
             for listing, val, lp, product in rows
         ])
@@ -236,6 +244,56 @@ def api_hide_listing(listing_id: int):
         listing.hidden = not listing.hidden
         db.commit()
         return JSONResponse({"id": listing_id, "hidden": listing.hidden})
+
+
+@app.post("/api/listings/{listing_id}/buy")
+def api_buy_listing(listing_id: int, price: Optional[float] = None):
+    cfg = get_config()
+    engine = make_engine(cfg.database.url)
+    with Session(engine) as db:
+        listing = db.get(Listing, listing_id)
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        if listing.bought_at:
+            # Toggle off (undo buy) only if not yet sold
+            if listing.sold_at:
+                raise HTTPException(status_code=400, detail="Cannot undo buy after marking sold")
+            listing.bought_at = None
+            listing.bought_price = None
+        else:
+            listing.bought_at = datetime.now(timezone.utc)
+            listing.bought_price = price if price is not None else listing.price
+        db.commit()
+        return JSONResponse({
+            "id": listing_id,
+            "bought_at": listing.bought_at.isoformat() if listing.bought_at else None,
+            "bought_price": listing.bought_price,
+        })
+
+
+@app.post("/api/listings/{listing_id}/sell")
+def api_sell_listing(listing_id: int, price: float):
+    cfg = get_config()
+    engine = make_engine(cfg.database.url)
+    with Session(engine) as db:
+        listing = db.get(Listing, listing_id)
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        if not listing.bought_at:
+            raise HTTPException(status_code=400, detail="Mark as bought before marking sold")
+        if listing.sold_at:
+            # Toggle off (undo sell)
+            listing.sold_at = None
+            listing.sold_price = None
+        else:
+            listing.sold_at = datetime.now(timezone.utc)
+            listing.sold_price = price
+        db.commit()
+        return JSONResponse({
+            "id": listing_id,
+            "sold_at": listing.sold_at.isoformat() if listing.sold_at else None,
+            "sold_price": listing.sold_price,
+        })
 
 
 @app.delete("/api/reset")

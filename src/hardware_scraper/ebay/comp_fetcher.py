@@ -38,30 +38,35 @@ class CompFetcher:
     async def fetch_and_cache(
         self, product_id: int, canonical_name: str, condition: str
     ) -> List[EbayComp]:
+        comps = await self._fetch_and_store(product_id, canonical_name, condition)
+        # For for_parts listings, also fetch working-used comps as the post-repair resale target.
+        if condition == "for_parts":
+            await self._fetch_and_store(product_id, canonical_name, "working_used")
+        return comps
+
+    async def _fetch_and_store(
+        self, product_id: int, canonical_name: str, condition: str
+    ) -> List[EbayComp]:
         cfg = self._cfg
         use_api = bool(cfg.ebay.app_id and cfg.ebay.cert_id)
-
-        # For broken items, append keyword to narrow to the for-parts market.
-        # eBay condition filter 7000 is also applied by the scraper for this condition.
-        ebay_query = canonical_name
-        if condition == "for_parts":
-            ebay_query = f"{canonical_name} for parts"
+        # "working_used" is an internal label; eBay sees it as "used" condition filter
+        ebay_condition = "used" if condition == "working_used" else condition
 
         if use_api:
             raw = await self._client.get_sold_listings(
-                query=ebay_query,
+                query=canonical_name,
                 days_back=cfg.ebay.comps_days_back,
                 limit=cfg.ebay.max_comps_per_query,
-                condition=condition,
+                condition=ebay_condition,
             )
             comps = [_comp_from_api(item, product_id, condition) for item in raw]
         else:
             from .scraper import EbayScraper
             scraper = self._scraper if self._scraper is not None else EbayScraper()
             raw = await scraper.get_sold_listings(
-                query=ebay_query,
+                query=canonical_name,
                 limit=cfg.ebay.max_comps_per_query,
-                condition=condition,
+                condition=ebay_condition,
             )
             comps = [_comp_from_scraper(item, product_id, condition) for item in raw]
 

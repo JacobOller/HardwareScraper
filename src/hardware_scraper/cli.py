@@ -176,6 +176,66 @@ def scan(
 
 
 @app.command()
+def notify() -> None:
+    """AI-confirm top Tier 1/2 deals and send new ones to Discord."""
+    from hardware_scraper.pipeline.notify import run_notify
+    asyncio.run(run_notify())
+
+
+@app.command(name="scan-and-notify")
+def scan_and_notify(
+    min_confidence: float = typer.Option(0.5, "--min-confidence", help="Min confidence for valuation"),
+) -> None:
+    """Full pipeline (browse + scrape + valuate + validate) then notify Discord."""
+    from hardware_scraper.config import get_config
+    from hardware_scraper.pipeline.ingest import run_browse, run_ingest, _make_scraper
+    from hardware_scraper.pipeline.valuate import run_valuate
+    from hardware_scraper.pipeline.validate import run_llm_validate
+    from hardware_scraper.pipeline.notify import run_notify
+
+    cfg = get_config()
+
+    browse_and_search = ["offerup", "facebook"]
+    if cfg.craigslist.enabled:
+        browse_and_search.append("craigslist")
+    if cfg.ebay_local.enabled:
+        browse_and_search.append("ebay_local")
+    search_only = ["mercari"] if cfg.mercari.enabled else []
+    all_search_sources = browse_and_search + search_only
+
+    async def _browse_one(source: str) -> None:
+        scraper = _make_scraper(cfg, source)
+        async with scraper.session():
+            console.print(f"[cyan]Browsing {source}...[/cyan]")
+            try:
+                await run_browse(source=source, scraper=scraper)
+            except Exception as exc:
+                console.print(f"[red]Browse {source} error: {exc}[/red]")
+
+    async def _scrape_all_queries(source: str) -> None:
+        scraper = _make_scraper(cfg, source)
+        async with scraper.session():
+            for q in cfg.search.queries:
+                console.print(f"[cyan]Scraping {source}: {q!r}...[/cyan]")
+                try:
+                    await run_ingest(query=q, source=source, scraper=scraper)
+                except Exception as exc:
+                    console.print(f"[red]Scrape {source} {q!r} error: {exc}[/red]")
+
+    async def _run():
+        await asyncio.gather(*[_browse_one(s) for s in browse_and_search])
+        await asyncio.gather(*[_scrape_all_queries(s) for s in all_search_sources])
+        console.print("[cyan]Valuating...[/cyan]")
+        await run_valuate(min_confidence=min_confidence)
+        console.print("[cyan]LLM validating high-margin results...[/cyan]")
+        await run_llm_validate()
+        console.print("[cyan]Notifying Discord...[/cyan]")
+        await run_notify()
+
+    asyncio.run(_run())
+
+
+@app.command()
 def ui(
     host: str = typer.Option("127.0.0.1", "--host", help="Host to bind to"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to serve on"),

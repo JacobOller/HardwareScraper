@@ -7,6 +7,8 @@ from hardware_scraper.valuation.calculator import ValuationCalculator
 @pytest.fixture
 def mock_config():
     cfg = MagicMock()
+    cfg.fees.platform = "ebay"
+    cfg.fees.ebay_rate = 0.1325
     cfg.fees.amazon_referral_rate = 0.08
     cfg.fees.amazon_per_item_fee = 0.99
     cfg.fees.outbound_shipping = 15.00
@@ -27,7 +29,7 @@ def calculator(mock_config):
 class TestValuationCalculator:
     def test_profit_calculation(self, calculator):
         result = calculator.calculate(asking_price=100.0, ebay_median=200.0, comp_count=10)
-        expected_fees = 200.0 * 0.08 + 0.99
+        expected_fees = 200.0 * 0.1325
         expected_net = 200.0 - expected_fees - 15.00
         assert abs(result.net_resale - expected_net) < 0.01
         assert abs(result.profit - (expected_net - 100.0)) < 0.01

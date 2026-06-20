@@ -9,8 +9,16 @@ ebay:
   comps_cache_hours: 24       # cache TTL for eBay comps per (canonical_name, condition)
   max_comps_per_query: 50     # max sold listings to fetch per eBay search
 
+notifications:
+  discord_webhook_url: "https://discordapp.com/api/webhooks/1517662889308061706/U_irLh-Lzd7_UQySOai61KhdJIMTXzF6Cm-ZegVuZkQ4cqCWhI7xjAXR4GeB02J6HSn5"       # paste your Discord channel webhook URL here
+  min_margin_tier: 2            # notify on Tier 1 (Excellent) and Tier 2 (Good)
+  max_per_run: 10               # max listings to send per run
+  for_parts_min_repair_upside: 50  # only notify on for-parts if repair upside >= $50
+
 fees:
-  amazon_referral_rate: 0.08  # Amazon referral fee for electronics (individual/professional seller)
+  platform: ebay              # ebay = 13.25% flat; amazon = 8% + $0.99/item
+  ebay_rate: 0.1325           # eBay standard electronics referral rate
+  amazon_referral_rate: 0.08  # Amazon referral fee for electronics
   amazon_per_item_fee: 0.99   # Amazon individual seller per-item closing fee
   outbound_shipping: 15.00    # fallback shipping (superseded by shipping.by_category)
 
@@ -92,6 +100,41 @@ search:
     - "Samsung Galaxy S23"
     - "cracked screen iPhone"
     - "broken iPhone"
+    # Laptops — Apple
+    - "MacBook Pro"
+    - "MacBook Air"
+    - "MacBook M1"
+    - "MacBook M2"
+    - "MacBook M3"
+    # Laptops — Lenovo
+    - "ThinkPad"
+    - "ThinkPad X1 Carbon"
+    - "IdeaPad"
+    # Laptops — Dell
+    - "Dell XPS"
+    - "Dell Latitude"
+    - "Dell Inspiron"
+    # Laptops — HP
+    - "HP EliteBook"
+    - "HP ProBook"
+    - "HP Pavilion"
+    - "HP Envy"
+    - "HP Omen"
+    # Laptops — ASUS
+    - "ASUS ZenBook"
+    - "ASUS VivoBook"
+    - "ASUS ROG"
+    # Laptops — Acer
+    - "Acer Aspire"
+    - "Acer Nitro"
+    # Laptops — Microsoft
+    - "Surface Pro"
+    - "Surface Laptop"
+    - "Surface Book"
+    # Laptops — other
+    - "Razer Blade"
+    - "MSI laptop"
+    - "gaming laptop"
     # For-parts / broken
     - "broken laptop"
     - "broken MacBook"

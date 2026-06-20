@@ -47,6 +47,8 @@ class EbayConfig(BaseSettings):
 
 class FeesConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
+    platform: str = "ebay"
+    ebay_rate: float = 0.1325
     amazon_referral_rate: float = 0.08
     amazon_per_item_fee: float = 0.99
     outbound_shipping: float = 15.00
@@ -146,6 +148,20 @@ class EbayLocalConfig:
         self.buy_it_now_only = buy_it_now_only
 
 
+class NotificationsConfig:
+    def __init__(
+        self,
+        discord_webhook_url: str = "",
+        min_margin_tier: int = 2,
+        max_per_run: int = 10,
+        for_parts_min_repair_upside: float = 50.0,
+    ) -> None:
+        self.discord_webhook_url = discord_webhook_url
+        self.min_margin_tier = min_margin_tier
+        self.max_per_run = max_per_run
+        self.for_parts_min_repair_upside = for_parts_min_repair_upside
+
+
 class AmazonConfig:
     def __init__(
         self,
@@ -201,6 +217,14 @@ class AppConfig:
         self.ebay_local = EbayLocalConfig(
             enabled=bool(el_raw.get("enabled", True)),
             buy_it_now_only=bool(el_raw.get("buy_it_now_only", True)),
+        )
+
+        notif_raw = raw.get("notifications", {})
+        self.notifications = NotificationsConfig(
+            discord_webhook_url=str(notif_raw.get("discord_webhook_url", "")),
+            min_margin_tier=int(notif_raw.get("min_margin_tier", 2)),
+            max_per_run=int(notif_raw.get("max_per_run", 10)),
+            for_parts_min_repair_upside=float(notif_raw.get("for_parts_min_repair_upside", 50.0)),
         )
 
         amz_raw = raw.get("amazon", {})

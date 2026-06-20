@@ -201,7 +201,15 @@ class TitleParser:
             parts = []
             if brand:
                 parts.append(brand)
-            parts.append(self._clean(model))
+            cleaned_model = self._clean(model)
+            parts.append(cleaned_model)
+            # For MacBooks without a chip variant in the captured model string,
+            # append the year from the full text so Intel-era MacBooks don't share
+            # comps with M-series (e.g. "Apple MacBook Pro 2017" vs "Apple MacBook Pro M3")
+            if "MacBook" in cleaned_model and not re.search(r"\bM\d+\b", cleaned_model):
+                year_m = re.search(r"\b(20(?:0[6-9]|1[0-9]|2[0-9]))\b", text)
+                if year_m and year_m.group(1) not in cleaned_model:
+                    parts.append(year_m.group(1))
             return " ".join(parts)
 
         # Components (gpu, cpu, ram, etc.)

@@ -24,3 +24,7 @@ class Listing(Base):
     saved: Mapped[bool] = mapped_column(default=False)
     hidden: Mapped[bool] = mapped_column(default=False)
     is_local_pickup: Mapped[bool] = mapped_column(default=True)  # False = ships to buyer; eBay Local only
+    bought_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    bought_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sold_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    sold_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

@@ -36,4 +36,6 @@ class Valuation(Base):
     margin_label: Mapped[str] = mapped_column(String(32))       # Excellent, Good, etc.
     inbound_shipping: Mapped[float] = mapped_column(Float, default=0.0)
     amazon_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    working_comp_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    working_comp_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     valuated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
